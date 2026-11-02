@@ -13,11 +13,22 @@ import kotlin.math.max
 @Serializable
 private data class PersistedAppState(
     val apiKey: String = "",
+    val geminiModelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
     val lessons: List<Lesson> = emptyList(),
     val conversationsByLesson: Map<String, List<ChatMessage>> = emptyMap()
 )
 
 class FluencyRepository(context: Context) {
+
+    companion object {
+        const val DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
+        val AVAILABLE_MODELS = listOf(
+            "gemini-3-flash-preview" to "Gemini 3 Flash (Свежая, быстрая + аудио)",
+            "gemini-3.1-pro-preview" to "Gemini 3.1 Pro (Максимальная глубина разбора)",
+            "gemini-2.5-flash" to "Gemini 2.5 Flash (Стабильная классика)",
+            "gemini-2.5-pro" to "Gemini 2.5 Pro"
+        )
+    }
 
     private val appContext = context.applicationContext
     private val storageFile = File(appContext.filesDir, "fluency_state_v1.json")
@@ -29,6 +40,9 @@ class FluencyRepository(context: Context) {
 
     private val _apiKey = MutableStateFlow("")
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
+
+    private val _geminiModelId = MutableStateFlow(DEFAULT_GEMINI_MODEL)
+    val geminiModelId: StateFlow<String> = _geminiModelId.asStateFlow()
 
     private val _lessons = MutableStateFlow<List<Lesson>>(emptyList())
     val lessons: StateFlow<List<Lesson>> = _lessons.asStateFlow()
@@ -51,6 +65,7 @@ class FluencyRepository(context: Context) {
 
         if (loaded != null && loaded.lessons.isNotEmpty()) {
             _apiKey.value = loaded.apiKey
+            _geminiModelId.value = loaded.geminiModelId.ifBlank { DEFAULT_GEMINI_MODEL }
             _lessons.value = loaded.lessons
             _conversations.value = loaded.conversationsByLesson
         } else {
@@ -68,6 +83,7 @@ class FluencyRepository(context: Context) {
         runCatching {
             val state = PersistedAppState(
                 apiKey = _apiKey.value,
+                geminiModelId = _geminiModelId.value,
                 lessons = _lessons.value,
                 conversationsByLesson = _conversations.value
             )
@@ -77,6 +93,11 @@ class FluencyRepository(context: Context) {
 
     fun updateApiKey(newKey: String) {
         _apiKey.value = newKey.trim()
+        saveToDisk()
+    }
+
+    fun updateGeminiModelId(modelId: String) {
+        _geminiModelId.value = modelId.trim().ifBlank { DEFAULT_GEMINI_MODEL }
         saveToDisk()
     }
 

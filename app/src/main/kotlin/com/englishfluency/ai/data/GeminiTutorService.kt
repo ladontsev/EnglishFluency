@@ -50,6 +50,7 @@ class GeminiTutorService(
      */
     suspend fun evaluateConversationTurn(
         apiKey: String,
+        modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
         lesson: Lesson,
         history: List<ChatMessage>,
         userSpeechText: String,
@@ -116,6 +117,7 @@ class GeminiTutorService(
         runCatching {
             val rawJson = callGeminiGenerateContent(
                 apiKey = apiKey,
+                modelId = modelId,
                 promptText = "$systemInstruction\n\n$userPrompt",
                 audioFile = audioFile
             )
@@ -130,6 +132,7 @@ class GeminiTutorService(
      */
     suspend fun evaluateSrsAttempt(
         apiKey: String,
+        modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
         vocab: VocabularyItem,
         mode: SrsExerciseMode,
         challengePrompt: String,
@@ -165,6 +168,7 @@ class GeminiTutorService(
         runCatching {
             val rawJson = callGeminiGenerateContent(
                 apiKey = apiKey,
+                modelId = modelId,
                 promptText = prompt,
                 audioFile = audioFile
             )
@@ -179,6 +183,7 @@ class GeminiTutorService(
      */
     suspend fun extractLessonFromScrapedPage(
         apiKey: String,
+        modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
         scraped: BbcLessonParser.ScrapedBbcPage
     ): Lesson = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
@@ -210,7 +215,7 @@ class GeminiTutorService(
         """.trimIndent()
 
         runCatching {
-            val rawJson = callGeminiGenerateContent(apiKey, prompt, audioFile = null)
+            val rawJson = callGeminiGenerateContent(apiKey, modelId, prompt, audioFile = null)
             val parsed = json.decodeFromString<ExtractedLessonSchema>(cleanJsonFence(rawJson))
             val lessonId = "bbc_" + UUID.randomUUID().toString().take(8)
             Lesson(
@@ -241,11 +246,13 @@ class GeminiTutorService(
 
     private fun callGeminiGenerateContent(
         apiKey: String,
+        modelId: String,
         promptText: String,
         audioFile: File?
     ): String {
+        val cleanModel = modelId.trim().ifBlank { FluencyRepository.DEFAULT_GEMINI_MODEL }
         val endpoint =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey.trim()}"
+            "https://generativelanguage.googleapis.com/v1beta/models/$cleanModel:generateContent?key=${apiKey.trim()}"
         val url = URL(endpoint)
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"

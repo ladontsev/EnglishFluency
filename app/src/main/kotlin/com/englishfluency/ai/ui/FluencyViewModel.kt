@@ -30,6 +30,7 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     val lessons: StateFlow<List<Lesson>> = repository.lessons
     val apiKey: StateFlow<String> = repository.apiKey
+    val geminiModelId: StateFlow<String> = repository.geminiModelId
 
     private val _selectedLessonId = MutableStateFlow(
         repository.lessons.value.firstOrNull()?.id ?: "ep-261029"
@@ -139,6 +140,7 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
                 onSuccess = { scraped ->
                     val lesson = geminiService.extractLessonFromScrapedPage(
                         apiKey = apiKey.value,
+                        modelId = geminiModelId.value,
                         scraped = scraped
                     )
                     repository.addOrReplaceLesson(lesson)
@@ -181,6 +183,7 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
             _isProcessingTurn.value = true
             val response = geminiService.evaluateConversationTurn(
                 apiKey = apiKey.value,
+                modelId = geminiModelId.value,
                 lesson = lesson,
                 history = history,
                 userSpeechText = cleanText,
@@ -268,6 +271,7 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
             _isEvaluatingSrs.value = true
             val result = geminiService.evaluateSrsAttempt(
                 apiKey = apiKey.value,
+                modelId = geminiModelId.value,
                 vocab = vocab,
                 mode = mode,
                 challengePrompt = prompt,

@@ -27,11 +27,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
@@ -77,7 +79,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -1104,13 +1108,18 @@ private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SettingsAndStatsTab(vm: FluencyViewModel) {
+    val clipboardManager = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
     val apiKey by vm.apiKey.collectAsState()
+    val geminiModelId by vm.geminiModelId.collectAsState()
     val lessons by vm.lessons.collectAsState()
     val allVocab = lessons.flatMap { it.vocabulary }
     var keyInput by rememberSaveable(apiKey) { mutableStateOf(apiKey) }
-    var savedBanner by remember { mutableStateOf(false) }
+    var modelInput by rememberSaveable(geminiModelId) { mutableStateOf(geminiModelId) }
+    var statusBanner by remember { mutableStateOf<String?>(null) }
 
     val isCheckingUpdate by vm.isCheckingUpdate.collectAsState()
     val latestRelease by vm.latestRelease.collectAsState()
@@ -1221,41 +1230,114 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Ключ Google Gemini API (Multimodal Audio + Text)",
+                        text = "Ключ и модель Google Gemini API (Multimodal Audio + Text)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "С ключом Gemini 2.5 Flash приложение отправляет вашу живую голосовую запись (.m4a) напрямую в мультимодальную модель для глубокого разбора произношения, интонации, грамматики и нейтив-фраз, а также автоматически парсит любые новые страницы BBC Learning English. Без ключа работает встроенный офлайн-тренажер.",
+                        text = "По умолчанию используется свежая модель Gemini 3 Flash (gemini-3-flash-preview), также можно переключиться на Gemini 3.1 Pro или вписать любой новый ID модели.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "Выбор модели ИИ:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        com.englishfluency.ai.data.FluencyRepository.AVAILABLE_MODELS.forEach { (id, label) ->
+                            FilterChip(
+                                selected = modelInput == id,
+                                onClick = {
+                                    modelInput = id
+                                    vm.repository.updateGeminiModelId(id)
+                                    statusBanner = "✅ Выбрана модель: $id"
+                                },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = modelInput,
+                        onValueChange = {
+                            modelInput = it
+                            vm.repository.updateGeminiModelId(it)
+                        },
+                        label = { Text("ID модели Gemini (можно указать свой)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                uriHandler.openUri("https://aistudio.google.com/app/apikey")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("1. Открыть Google AI Studio (получить ключ)")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            val clipText = clipboardManager.getText()?.text?.trim().orEmpty()
+                            if (clipText.isNotBlank()) {
+                                keyInput = clipText
+                                vm.repository.updateApiKey(clipText)
+                                statusBanner = "✅ Ключ вставлен из буфера обмена и сохранен!"
+                            } else {
+                                statusBanner = "⚠️ Буфер обмена пуст. Скопируйте ключ в AI Studio."
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Default.ContentPaste,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("2. Вставить из буфера и сохранить")
+                    }
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(
                         value = keyInput,
                         onValueChange = {
                             keyInput = it
-                            savedBanner = false
+                            statusBanner = null
                         },
                         label = { Text("Gemini API Key (AIza...)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Button(
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
                         onClick = {
                             vm.repository.updateApiKey(keyInput)
-                            savedBanner = true
+                            statusBanner = "✅ Ключ сохранен локально на устройстве."
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Сохранить API-ключ")
+                        Text("Сохранить введенный вручную ключ")
                     }
-                    if (savedBanner) {
+                    if (statusBanner != null) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "✅ Ключ сохранен локально на устройстве.",
+                            text = statusBanner!!,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
