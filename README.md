@@ -49,9 +49,8 @@
 ## 🛠 Сборка и установка
 
 ```bash
-cd android-app
 ./gradlew assembleDebug
 ```
 
-Готовый APK собирается в `android-app/app/build/outputs/apk/debug/app-debug.apk`.
+Готовый APK собирается в `app/build/outputs/apk/debug/app-debug.apk`.
 Also available directly in [GitHub Releases](https://github.com/ladontsev/EnglishFluency/releases).

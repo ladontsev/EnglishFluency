@@ -1,6 +1,7 @@
 # Android & Gradle build outputs
 **/build/
 **/.gradle/
+**/.kotlin/
 **/local.properties
 .idea/
 *.iml
@@ -8,3 +9,4 @@
 *.keystore
 .DS_Store
 Thumbs.db
+
