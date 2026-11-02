@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Badge
@@ -1111,11 +1112,111 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
     var keyInput by rememberSaveable(apiKey) { mutableStateOf(apiKey) }
     var savedBanner by remember { mutableStateOf(false) }
 
+    val isCheckingUpdate by vm.isCheckingUpdate.collectAsState()
+    val latestRelease by vm.latestRelease.collectAsState()
+    val updateStatusMessage by vm.updateStatusMessage.collectAsState()
+    val downloadProgress by vm.downloadProgress.collectAsState()
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // GitHub Self-Update Card
+        item {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Обновление приложения с GitHub",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Текущая версия: v${vm.currentVersionName} • Репозиторий: ladontsev/EnglishFluency",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "Проверяет последний релиз в GitHub Releases, скачивает свежий APK и запускает системное обновление Android с сохранением всех ваших уроков, истории диалогов и API-ключа.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    if (updateStatusMessage != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = updateStatusMessage!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    if (downloadProgress != null) {
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { (downloadProgress ?: 0) / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Скачивание APK: ${downloadProgress}%",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { vm.checkForGitHubUpdates() },
+                            enabled = !isCheckingUpdate && downloadProgress == null,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text("Проверить обновления на GitHub")
+                        }
+
+                        if (latestRelease != null && downloadProgress == null) {
+                            OutlinedButton(
+                                onClick = { vm.downloadAndInstallGitHubUpdate(latestRelease!!) }
+                            ) {
+                                Text("Скачать ${latestRelease!!.tagName}")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {

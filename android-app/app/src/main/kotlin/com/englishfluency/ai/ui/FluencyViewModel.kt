@@ -8,6 +8,8 @@ import com.englishfluency.ai.data.BbcLessonParser
 import com.englishfluency.ai.data.ChatMessage
 import com.englishfluency.ai.data.FluencyRepository
 import com.englishfluency.ai.data.GeminiTutorService
+import com.englishfluency.ai.data.GitHubReleaseInfo
+import com.englishfluency.ai.data.GitHubUpdater
 import com.englishfluency.ai.data.Lesson
 import com.englishfluency.ai.data.MessageSender
 import com.englishfluency.ai.data.SrsEvaluationResult
@@ -55,6 +57,69 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isEvaluatingSrs = MutableStateFlow(false)
     val isEvaluatingSrs: StateFlow<Boolean> = _isEvaluatingSrs.asStateFlow()
+
+    // GitHub Self-Update State
+    val currentVersionName: String = GitHubUpdater.getCurrentAppVersion(application)
+
+    private val _isCheckingUpdate = MutableStateFlow(false)
+    val isCheckingUpdate: StateFlow<Boolean> = _isCheckingUpdate.asStateFlow()
+
+    private val _latestRelease = MutableStateFlow<GitHubReleaseInfo?>(null)
+    val latestRelease: StateFlow<GitHubReleaseInfo?> = _latestRelease.asStateFlow()
+
+    private val _updateStatusMessage = MutableStateFlow<String?>(null)
+    val updateStatusMessage: StateFlow<String?> = _updateStatusMessage.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow<Int?>(null)
+    val downloadProgress: StateFlow<Int?> = _downloadProgress.asStateFlow()
+
+    fun checkForGitHubUpdates() {
+        viewModelScope.launch {
+            _isCheckingUpdate.value = true
+            _updateStatusMessage.value = "Проверка последнего релиза на GitHub (ladontsev/EnglishFluency)..."
+            val result = GitHubUpdater.checkLatestRelease()
+            result.fold(
+                onSuccess = { release ->
+                    _latestRelease.value = release
+                    val newer = GitHubUpdater.isNewerVersion(currentVersionName, release.tagName)
+                    _updateStatusMessage.value = if (newer) {
+                        "🎉 Доступна новая версия ${release.tagName}: ${release.releaseName}"
+                    } else {
+                        "✅ У вас установлена актуальная версия ($currentVersionName). Последний релиз на GitHub: ${release.tagName}"
+                    }
+                    _isCheckingUpdate.value = false
+                },
+                onFailure = { err ->
+                    _updateStatusMessage.value = "Ошибка при проверке обновлений: ${err.localizedMessage}"
+                    _isCheckingUpdate.value = false
+                }
+            )
+        }
+    }
+
+    fun downloadAndInstallGitHubUpdate(release: GitHubReleaseInfo) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            _downloadProgress.value = 0
+            _updateStatusMessage.value = "Скачивание APK ${release.tagName}..."
+            val result = GitHubUpdater.downloadApkToCache(
+                context = app,
+                downloadUrl = release.apkDownloadUrl,
+                onProgress = { pct -> _downloadProgress.value = pct }
+            )
+            result.fold(
+                onSuccess = { apkFile ->
+                    _downloadProgress.value = null
+                    _updateStatusMessage.value = "APK скачан (${apkFile.length() / 1024} КБ). Запуск установщика Android..."
+                    GitHubUpdater.promptInstallApk(app, apkFile)
+                },
+                onFailure = { err ->
+                    _downloadProgress.value = null
+                    _updateStatusMessage.value = "Ошибка скачивания APK: ${err.localizedMessage}"
+                }
+            )
+        }
+    }
 
     fun selectLesson(lessonId: String) {
         _selectedLessonId.value = lessonId
