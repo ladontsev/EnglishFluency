@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 06: Everyday Workplace Idioms & Phrasal Chunks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-border: #30363d;
+      --accent: #58a6ff;
+      --accent-glow: rgba(88, 166, 255, 0.15);
+      --success: #3fb950;
+      --success-glow: rgba(63, 185, 80, 0.15);
+      --pink: #f778ba;
+      --pink-glow: rgba(247, 120, 186, 0.15);
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --text-muted: #8b949e;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 840px;
+      width: 100%;
+    }
+
+    header {
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      background: var(--pink-glow);
+      color: var(--pink);
+      border: 1px solid var(--pink);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-bright);
+      margin-bottom: 0.5rem;
+      line-height: 1.25;
+    }
+
+    .lesson-meta {
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text-bright);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+
+    .highlight-box {
+      background: rgba(247, 120, 186, 0.08);
+      border-left: 3px solid var(--pink);
+      padding: 1rem 1.25rem;
+      border-radius: 0 8px 8px 0;
+      margin: 1.25rem 0;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin: 1.25rem 0;
+    }
+
+    .chunk-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 1rem;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .chunk-card:hover {
+      border-color: var(--pink);
+      transform: translateY(-2px);
+    }
+
+    .chunk-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.4rem;
+    }
+
+    .phrase {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-bright);
+    }
+
+    .audio-btn {
+      background: transparent;
+      border: 1px solid var(--surface-border);
+      color: var(--accent);
+      border-radius: 6px;
+      padding: 0.2rem 0.5rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      transition: background 0.15s;
+    }
+
+    .audio-btn:hover {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+    }
+
+    .translation {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .example {
+      font-size: 0.85rem;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      color: #9ece6a;
+    }
+
+    /* Quiz Area */
+    .quiz-question {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .dialogue-bubble {
+      background: rgba(247, 120, 186, 0.1);
+      border: 1px solid rgba(247, 120, 186, 0.25);
+      border-radius: 12px 12px 12px 0;
+      padding: 0.75rem 1rem;
+      font-style: italic;
+      color: var(--text-bright);
+      margin-bottom: 1rem;
+      display: inline-block;
+    }
+
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    @media (max-width: 600px) {
+      .options-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .opt-btn {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      text-align: left;
+      font-size: 0.95rem;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all 0.15s ease;
+    }
+
+    .opt-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--pink);
+    }
+
+    .opt-btn.correct {
+      background: var(--success-glow) !important;
+      border-color: var(--success) !important;
+      color: var(--success) !important;
+      font-weight: 600;
+    }
+
+    .opt-btn.wrong {
+      background: rgba(248, 81, 73, 0.15) !important;
+      border-color: #f85149 !important;
+      color: #ff7b72 !important;
+    }
+
+    .explanation {
+      margin-top: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      display: none;
+    }
+
+    /* Flashcard Retrieval */
+    .flashcard {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 1.5rem;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .flashcard:hover {
+      border-color: var(--pink);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .card-prompt {
+      font-size: 1.25rem;
+      color: var(--text-bright);
+      font-weight: 500;
+    }
+
+    .card-hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .card-answer {
+      font-size: 1.35rem;
+      color: var(--pink);
+      font-weight: 700;
+      display: none;
+    }
+
+    .flashcard.flipped .card-prompt {
+      display: none;
+    }
+
+    .flashcard.flipped .card-answer {
+      display: block;
+    }
+
+    .flash-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+    }
+
+    .btn {
+      background: var(--pink);
+      color: #0d1117;
+      border: none;
+      font-weight: 600;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: opacity 0.2s;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--surface-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="badge">Lesson 06 • High-Frequency Idioms</div>
+    <h1>Everyday Chunks: Sounding Like an Insider</h1>
+    <div class="lesson-meta">
+      <span>⏱ Estimated time: 12 mins</span>
+      <span>🎯 Level: Pre-Intermediate → Intermediate</span>
+      <span>⚡ Goal: Understand & use natural workplace idioms without textbook stiffness</span>
+    </div>
+  </header>
+
+  <!-- Section 1: Intro -->
+  <section class="card">
+    <h2>1. The 5 Idioms You Hear in Every Tech & Business Chat</h2>
+    <p>
+      Instead of memorizing hundreds of obscure idioms like <em>"raining cats and dogs"</em>, master the handful of expressions that native speakers use daily in meetings, Slack, and calls:
+    </p>
+
+    <div class="highlight-box">
+      <strong>🎯 Natural Idioms vs. Textbook English:</strong><br>
+      Instead of saying <em>"Let us finish our work for today"</em>, a native speaker will almost always say: <em>"Let's call it a day!"</em>
+    </div>
+  </section>
+
+  <!-- Section 2: 4 Everyday Idioms -->
+  <section class="card">
+    <h2>2. 4 Core Conversational Idioms</h2>
+    <p>Practice these idioms with their natural rhythms:</p>
+
+    <div class="grid-2">
+      <!-- Chunk 1 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"Call it a day"</span>
+          <button class="audio-btn" onclick="speak('It\'s getting late, let\'s call it a day.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Закругляться / заканчивать работу на сегодня»</div>
+        <div class="example">"We solved the main bug, let's call it a day."</div>
+      </div>
+
+      <!-- Chunk 2 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"Touch base"</span>
+          <button class="audio-btn" onclick="speak('Let\'s touch base tomorrow morning.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Связаться / быстро созвониться / сверить часы»</div>
+        <div class="example">"I'll check the logs and touch base with you after lunch."</div>
+      </div>
+
+      <!-- Chunk 3 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"Play it by ear"</span>
+          <button class="audio-btn" onclick="speak('Let\'s see how the release goes and play it by ear.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Действовать по ситуации / импровизировать»</div>
+        <div class="example">"We don't have a fixed plan yet, let's just play it by ear."</div>
+      </div>
+
+      <!-- Chunk 4 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"On the same page"</span>
+          <button class="audio-btn" onclick="speak('I just want to make sure we\'re on the same page.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Быть на одной волне / одинаково понимать задачу»</div>
+        <div class="example">"Let's review the requirements so everyone is on the same page."</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: Active Recall Flashcards -->
+  <section class="card">
+    <h2>3. Active Recall: Natural Idioms</h2>
+    <p>Try to formulate the idiom before flipping the card!</p>
+
+    <div class="flashcard" id="flashcard" onclick="toggleFlashcard()">
+      <div class="card-prompt" id="cardPrompt">Загрузка...</div>
+      <div class="card-hint" id="cardHint">(Кликни, чтобы проверить себя и услышать)</div>
+      <div class="card-answer" id="cardAnswer">Answer</div>
+    </div>
+
+    <div class="flash-nav">
+      <button class="btn btn-secondary" onclick="prevCard()">← Prev</button>
+      <span id="cardCounter" style="font-size: 0.9rem; color: var(--text-muted);">1 / 5</span>
+      <button class="btn btn-secondary" onclick="nextCard()">Next →</button>
+    </div>
+  </section>
+
+  <!-- Section 4: Situation Simulator -->
+  <section class="card">
+    <h2>4. Idiomatic Situation Simulator</h2>
+    <p>Choose the most natural, authentic reaction:</p>
+
+    <!-- Q1 -->
+    <div class="quiz-question" id="q1">
+      <div class="dialogue-bubble">"It's 7 PM on a Friday and we've been debugging for 6 hours straight."</div>
+      <div class="options-grid">
+        <button class="opt-btn" onclick="checkAnswer(this, true, 'q1-exp', '«Let\'s call it a day» — идеальная и естественная фраза для завершения рабочего дня.')">We made good progress. Let's call it a day and finish on Monday.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q1-exp', '«Stop our job now» звучит как приказ.')">Stop our job now, please.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q1-exp', '«I am out forever» звучит так, будто вы увольняетесь.')">I am out forever.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q1-exp', '«Finish the existence» нелепый перевод.')">Finish the day's existence.</button>
+      </div>
+      <div class="explanation" id="q1-exp"></div>
+    </div>
+
+    <!-- Q2 -->
+    <div class="quiz-question" id="q2">
+      <div class="dialogue-bubble">"Do you want to plan every hour of our Saturday trip in advance?"</div>
+      <div class="options-grid">
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q2-exp', '«No plan» звучит сухо.')">No plan is needed.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, true, 'q2-exp', '«Let\'s just play it by ear» — идеальный способ предложить действовать по обстановке.')">Nah, let's just play it by ear and see how the weather is.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q2-exp', '«Play with ears» буквальный перевод, бессмыслица.')">Let's play with our ears.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q2-exp', '«Whatever happens happens» допустимо, но «play it by ear» звучит на порядок естественнее.')">Whatever happens happens.</button>
+      </div>
+      <div class="explanation" id="q2-exp"></div>
+    </div>
+  </section>
+
+  <!-- Section 5: The Ultimate Combo -->
+  <section class="card" style="text-align: center;">
+    <h2>🎧 Pro-Combo: The End-of-Meeting Wrap-up</h2>
+    <p>Listen to how these idioms combine into a 10-second wrap-up:</p>
+    <div style="font-family: var(--font-mono); background: rgba(0,0,0,0.3); padding: 1.25rem; border-radius: 8px; margin: 1rem 0; color: #f778ba; text-align: left; font-size: 0.95rem;">
+      "Great sync! Just to make sure we're <strong>on the same page</strong>, I'll send the summary and we'll <strong>touch base</strong> on Wednesday. Let's <strong>call it a day</strong>!"
+    </div>
+    <button class="btn" onclick="speak('Great sync! Just to make sure we\'re on the same page, I\'ll send the summary and we\'ll touch base on Wednesday. Let\'s call it a day!')">🎧 Listen to Wrap-up</button>
+  </section>
+</div>
+
+<script>
+  function speak(text) {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    } else {
+      alert('Speech synthesis not supported in your browser.');
+    }
+  }
+
+  // Flashcards Data
+  const cards = [
+    { prompt: "«Давайте закругляться / на сегодня хватит»", answer: "Let's call it a day.", hint: "Classic phrase to finish work for the day" },
+    { prompt: "«Давай свяжемся / созвонимся завтра утром»", answer: "Let's touch base tomorrow morning.", hint: "Short syncing / checking in" },
+    { prompt: "«Давай действовать по ситуации (без жесткого плана)»", answer: "Let's just play it by ear.", hint: "Improvising based on circumstances" },
+    { prompt: "«Убедиться, что мы на одной волне / одинаково всё понимаем»", answer: "Make sure we're on the same page.", hint: "Aligning understanding" },
+    { prompt: "«Подвести итоги / быстро закончить встречу»", answer: "Wrap things up.", hint: "Phrasal verb for finishing a meeting or task" }
+  ];
+
+  let currentCardIndex = 0;
+  let isFlipped = false;
+
+  function renderCard() {
+    const cardEl = document.getElementById('flashcard');
+    const promptEl = document.getElementById('cardPrompt');
+    const answerEl = document.getElementById('cardAnswer');
+    const counterEl = document.getElementById('cardCounter');
+
+    isFlipped = false;
+    cardEl.classList.remove('flipped');
+    promptEl.textContent = cards[currentCardIndex].prompt;
+    answerEl.textContent = cards[currentCardIndex].answer;
+    counterEl.textContent = `${currentCardIndex + 1} / ${cards.length}`;
+  }
+
+  function toggleFlashcard() {
+    const cardEl = document.getElementById('flashcard');
+    isFlipped = !isFlipped;
+    cardEl.classList.toggle('flipped');
+    if (isFlipped) {
+      speak(cards[currentCardIndex].answer);
+    }
+  }
+
+  function nextCard() {
+    currentCardIndex = (currentCardIndex + 1) % cards.length;
+    renderCard();
+  }
+
+  function prevCard() {
+    currentCardIndex = (currentCardIndex - 1 + cards.length) % cards.length;
+    renderCard();
+  }
+
+  function checkAnswer(btn, isCorrect, expId, expText) {
+    const parent = btn.closest('.quiz-question');
+    const allBtns = parent.querySelectorAll('.opt-btn');
+    const expEl = document.getElementById(expId);
+
+    allBtns.forEach(b => {
+      b.disabled = true;
+      b.style.cursor = 'default';
+    });
+
+    if (isCorrect) {
+      btn.classList.add('correct');
+      expEl.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Верно!</span> ${expText}`;
+    } else {
+      btn.classList.add('wrong');
+      expEl.innerHTML = `<span style="color: #ff7b72; font-weight: 600;">✗ Не совсем.</span> ${expText}`;
+    }
+    expEl.style.display = 'block';
+  }
+
+  // Initialize
+  renderCard();
+</script>
+</body>
+</html>

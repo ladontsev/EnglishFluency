@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 04: Spontaneous Storytelling & Structuring Thoughts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-border: #30363d;
+      --accent: #58a6ff;
+      --accent-glow: rgba(88, 166, 255, 0.15);
+      --success: #3fb950;
+      --success-glow: rgba(63, 185, 80, 0.15);
+      --cyan: #39c5cf;
+      --cyan-glow: rgba(57, 197, 207, 0.15);
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --text-muted: #8b949e;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 840px;
+      width: 100%;
+    }
+
+    header {
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      background: var(--cyan-glow);
+      color: var(--cyan);
+      border: 1px solid var(--cyan);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-bright);
+      margin-bottom: 0.5rem;
+      line-height: 1.25;
+    }
+
+    .lesson-meta {
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text-bright);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+
+    .highlight-box {
+      background: rgba(57, 197, 207, 0.08);
+      border-left: 3px solid var(--cyan);
+      padding: 1rem 1.25rem;
+      border-radius: 0 8px 8px 0;
+      margin: 1.25rem 0;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin: 1.25rem 0;
+    }
+
+    .chunk-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 1rem;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .chunk-card:hover {
+      border-color: var(--cyan);
+      transform: translateY(-2px);
+    }
+
+    .chunk-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.4rem;
+    }
+
+    .phrase {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-bright);
+    }
+
+    .audio-btn {
+      background: transparent;
+      border: 1px solid var(--surface-border);
+      color: var(--accent);
+      border-radius: 6px;
+      padding: 0.2rem 0.5rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      transition: background 0.15s;
+    }
+
+    .audio-btn:hover {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+    }
+
+    .translation {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .example {
+      font-size: 0.85rem;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      color: #9ece6a;
+    }
+
+    .story-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 1.5rem 0;
+    }
+
+    .timeline-step {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    .step-num {
+      background: var(--cyan);
+      color: #0d1117;
+      font-weight: 700;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    /* Quiz Area */
+    .quiz-question {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .dialogue-bubble {
+      background: rgba(57, 197, 207, 0.1);
+      border: 1px solid rgba(57, 197, 207, 0.25);
+      border-radius: 12px 12px 12px 0;
+      padding: 0.75rem 1rem;
+      font-style: italic;
+      color: var(--text-bright);
+      margin-bottom: 1rem;
+      display: inline-block;
+    }
+
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    @media (max-width: 600px) {
+      .options-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .opt-btn {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      text-align: left;
+      font-size: 0.95rem;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all 0.15s ease;
+    }
+
+    .opt-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--cyan);
+    }
+
+    .opt-btn.correct {
+      background: var(--success-glow) !important;
+      border-color: var(--success) !important;
+      color: var(--success) !important;
+      font-weight: 600;
+    }
+
+    .opt-btn.wrong {
+      background: rgba(248, 81, 73, 0.15) !important;
+      border-color: #f85149 !important;
+      color: #ff7b72 !important;
+    }
+
+    .explanation {
+      margin-top: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      display: none;
+    }
+
+    /* Flashcards */
+    .flashcard {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 1.5rem;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .flashcard:hover {
+      border-color: var(--cyan);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .card-prompt {
+      font-size: 1.25rem;
+      color: var(--text-bright);
+      font-weight: 500;
+    }
+
+    .card-hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .card-answer {
+      font-size: 1.35rem;
+      color: var(--cyan);
+      font-weight: 700;
+      display: none;
+    }
+
+    .flashcard.flipped .card-prompt {
+      display: none;
+    }
+
+    .flashcard.flipped .card-answer {
+      display: block;
+    }
+
+    .flash-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+    }
+
+    .btn {
+      background: var(--cyan);
+      color: #0d1117;
+      border: none;
+      font-weight: 600;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: opacity 0.2s;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--surface-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="badge">Lesson 04 • Narrative Flow</div>
+    <h1>Spontaneous Storytelling: "Long Story Short"</h1>
+    <div class="lesson-meta">
+      <span>⏱ Estimated time: 12 mins</span>
+      <span>🎯 Level: Pre-Intermediate → Intermediate</span>
+      <span>⚡ Goal: Tell short stories & explain issues without getting stuck</span>
+    </div>
+  </header>
+
+  <!-- Section 1: The Narrative Skeleton -->
+  <section class="card">
+    <h2>1. The 4-Anchor Storytelling Formula</h2>
+    <p>
+      When recounting an incident, bug, or weekend story, don't worry about complex grammar. Native speakers link events using 4 simple structural anchors:
+    </p>
+
+    <div class="story-timeline">
+      <div class="timeline-step">
+        <div class="step-num">1</div>
+        <div>
+          <strong style="color: var(--cyan);">The Setup / Core Problem:</strong> <code>"The thing is..."</code><br>
+          <span style="font-size: 0.88rem; color: var(--text-muted);">Объясняем суть: <em>"The thing is, our server went down right before the demo."</em></span>
+        </div>
+      </div>
+
+      <div class="timeline-step">
+        <div class="step-num">2</div>
+        <div>
+          <strong style="color: var(--cyan);">The Twist / Discovery:</strong> <code>"It turns out that..."</code><br>
+          <span style="font-size: 0.88rem; color: var(--text-muted);">Неожиданный поворот: <em>"It turns out that someone forgot to renew the SSL certificate."</em></span>
+        </div>
+      </div>
+
+      <div class="timeline-step">
+        <div class="step-num">3</div>
+        <div>
+          <strong style="color: var(--cyan);">The Fast-Forward:</strong> <code>"Long story short..."</code><br>
+          <span style="font-size: 0.88rem; color: var(--text-muted);">Пропускаем лишние детали: <em>"Long story short, we fixed it in 10 minutes."</em></span>
+        </div>
+      </div>
+
+      <div class="timeline-step">
+        <div class="step-num">4</div>
+        <div>
+          <strong style="color: var(--cyan);">The Bottom Line:</strong> <code>"At the end of the day..."</code><br>
+          <span style="font-size: 0.88rem; color: var(--text-muted);">Итог / вывод: <em>"At the end of the day, the client was really happy."</em></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: Key Narrative Chunks -->
+  <section class="card">
+    <h2>2. High-Impact Narrative Chunks</h2>
+    <p>Practice these transition blocks to make your stories flow effortlessly:</p>
+
+    <div class="grid-2">
+      <!-- Chunk 1 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"Long story short..."</span>
+          <button class="audio-btn" onclick="speak('Long story short, everything worked out in the end.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Короче говоря... / Короче...»</div>
+        <div class="example">"We had lots of trouble, but long story short, we made it."</div>
+      </div>
+
+      <!-- Chunk 2 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"It turns out that..."</span>
+          <button class="audio-btn" onclick="speak('It turns out that it wasn\'t a bug at all.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Оказалось, что... / Выяснилось, что...»</div>
+        <div class="example">"It turns out that the database was just disconnected."</div>
+      </div>
+
+      <!-- Chunk 3 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"The thing is..."</span>
+          <button class="audio-btn" onclick="speak('The thing is, I didn\'t have enough time.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Дело в том, что... / Фишка в том, что...»</div>
+        <div class="example">"The thing is, we need more resources for this feature."</div>
+      </div>
+
+      <!-- Chunk 4 -->
+      <div class="chunk-card">
+        <div class="chunk-header">
+          <span class="phrase">"Out of nowhere..."</span>
+          <button class="audio-btn" onclick="speak('Out of nowhere, the app started crashing.')">🔊 Listen</button>
+        </div>
+        <div class="translation">«Внезапно / Откуда ни возьмись...»</div>
+        <div class="example">"Everything was fine, then out of nowhere, the network dropped."</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: Active Recall Flashcards -->
+  <section class="card">
+    <h2>3. Active Recall: Story Connectors</h2>
+    <p>Try to pronounce the phrase out loud before flipping the card!</p>
+
+    <div class="flashcard" id="flashcard" onclick="toggleFlashcard()">
+      <div class="card-prompt" id="cardPrompt">Загрузка...</div>
+      <div class="card-hint" id="cardHint">(Кликни, чтобы проверить себя и услышать)</div>
+      <div class="card-answer" id="cardAnswer">Answer</div>
+    </div>
+
+    <div class="flash-nav">
+      <button class="btn btn-secondary" onclick="prevCard()">← Prev</button>
+      <span id="cardCounter" style="font-size: 0.9rem; color: var(--text-muted);">1 / 5</span>
+      <button class="btn btn-secondary" onclick="nextCard()">Next →</button>
+    </div>
+  </section>
+
+  <!-- Section 4: Situation Simulator -->
+  <section class="card">
+    <h2>4. Storytelling Simulator</h2>
+    <p>Choose the phrase that best maintains the flow of the narrative:</p>
+
+    <!-- Q1 -->
+    <div class="quiz-question" id="q1">
+      <div class="dialogue-bubble">"Why were you late for the standup this morning?"</div>
+      <div class="options-grid">
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q1-exp', '«Because of reasons» звучит небрежно.')">Because of reasons.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, true, 'q1-exp', '«The thing is...» + «Long story short...» — превосходная связка для быстрого объяснения!')">The thing is, my laptop crashed right after an update. But long story short, I fixed it!</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q1-exp', '«I was late because I was late» масло масляное.')">I was late because I was late.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q1-exp', '«Never ask me» грубо.')">Do not ask me why.</button>
+      </div>
+      <div class="explanation" id="q1-exp"></div>
+    </div>
+
+    <!-- Q2 -->
+    <div class="quiz-question" id="q2">
+      <div class="dialogue-bubble">"Did you find out why the customer cancelled their subscription?"</div>
+      <div class="options-grid">
+        <button class="opt-btn" onclick="checkAnswer(this, true, 'q2-exp', '«It turns out that...» идеально для сообщения раскрытых фактов.')">Yeah, it turns out that they simply switched to a cheaper plan.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q2-exp', '«It became known» звучит казенно и сухо.')">It became known that they changed plan.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q2-exp', '«I know it» без подробностей обрывает диалог.')">I know it, yes.</button>
+        <button class="opt-btn" onclick="checkAnswer(this, false, 'q2-exp', '«They go away» грамматически неряшливо.')">They go away for good.</button>
+      </div>
+      <div class="explanation" id="q2-exp"></div>
+    </div>
+  </section>
+
+  <!-- Section 5: The Ultimate Combo -->
+  <section class="card" style="text-align: center;">
+    <h2>🎧 The Full 20-Second Story Drill</h2>
+    <p>Listen to how all 4 anchors come together in one smooth flow:</p>
+    <div style="font-family: var(--font-mono); background: rgba(0,0,0,0.3); padding: 1.25rem; border-radius: 8px; margin: 1rem 0; color: #39c5cf; text-align: left; font-size: 0.95rem;">
+      "<strong>The thing is</strong>, we had a weird memory leak yesterday. <strong>It turns out that</strong> a background worker wasn't closing DB connections. <strong>Long story short</strong>, we patched it, and <strong>at the end of the day</strong>, zero data was lost."
+    </div>
+    <button class="btn" onclick="speak('The thing is, we had a weird memory leak yesterday. It turns out that a background worker was not closing DB connections. Long story short, we patched it, and at the end of the day, zero data was lost.')">🎧 Listen to Story</button>
+  </section>
+</div>
+
+<script>
+  function speak(text) {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    } else {
+      alert('Speech synthesis not supported in your browser.');
+    }
+  }
+
+  // Flashcards Data
+  const cards = [
+    { prompt: "«Короче говоря / Если в двух словах...»", answer: "Long story short...", hint: "Used to skip unnecessary details and jump to the outcome" },
+    { prompt: "«Оказалось, что / Выяснилось, что...»", answer: "It turns out that...", hint: "Revealing an unexpected fact or root cause" },
+    { prompt: "«Дело в том, что... / Суть проблемы в том, что...»", answer: "The thing is...", hint: "Starting an explanation of a problem or reason" },
+    { prompt: "«В конце концов / В сухом остатке...»", answer: "At the end of the day...", hint: "Summarizing the overall most important takeaway" },
+    { prompt: "«Внезапно / Откуда ни возьмись...»", answer: "Out of nowhere...", hint: "Describing an unexpected event happening suddenly" }
+  ];
+
+  let currentCardIndex = 0;
+  let isFlipped = false;
+
+  function renderCard() {
+    const cardEl = document.getElementById('flashcard');
+    const promptEl = document.getElementById('cardPrompt');
+    const answerEl = document.getElementById('cardAnswer');
+    const counterEl = document.getElementById('cardCounter');
+
+    isFlipped = false;
+    cardEl.classList.remove('flipped');
+    promptEl.textContent = cards[currentCardIndex].prompt;
+    answerEl.textContent = cards[currentCardIndex].answer;
+    counterEl.textContent = `${currentCardIndex + 1} / ${cards.length}`;
+  }
+
+  function toggleFlashcard() {
+    const cardEl = document.getElementById('flashcard');
+    isFlipped = !isFlipped;
+    cardEl.classList.toggle('flipped');
+    if (isFlipped) {
+      speak(cards[currentCardIndex].answer);
+    }
+  }
+
+  function nextCard() {
+    currentCardIndex = (currentCardIndex + 1) % cards.length;
+    renderCard();
+  }
+
+  function prevCard() {
+    currentCardIndex = (currentCardIndex - 1 + cards.length) % cards.length;
+    renderCard();
+  }
+
+  function checkAnswer(btn, isCorrect, expId, expText) {
+    const parent = btn.closest('.quiz-question');
+    const allBtns = parent.querySelectorAll('.opt-btn');
+    const expEl = document.getElementById(expId);
+
+    allBtns.forEach(b => {
+      b.disabled = true;
+      b.style.cursor = 'default';
+    });
+
+    if (isCorrect) {
+      btn.classList.add('correct');
+      expEl.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Верно!</span> ${expText}`;
+    } else {
+      btn.classList.add('wrong');
+      expEl.innerHTML = `<span style="color: #ff7b72; font-weight: 600;">✗ Не совсем.</span> ${expText}`;
+    }
+    expEl.style.display = 'block';
+  }
+
+  // Initialize
+  renderCard();
+</script>
+</body>
+</html>
