@@ -167,7 +167,7 @@ fun EnglishFluencyApp(vm: FluencyViewModel = viewModel()) {
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Настройки") },
-                    label = { Text("ИИ Ключ") }
+                    label = { Text("Настройки") }
                 )
             }
         }
