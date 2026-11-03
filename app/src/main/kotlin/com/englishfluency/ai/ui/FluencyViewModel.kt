@@ -8,6 +8,7 @@ import com.englishfluency.ai.data.BbcCatalogItem
 import com.englishfluency.ai.data.BbcLessonParser
 import com.englishfluency.ai.data.ChatMessage
 import com.englishfluency.ai.data.FluencyRepository
+import com.englishfluency.ai.data.GeminiModelInfo
 import com.englishfluency.ai.data.GeminiTutorService
 import com.englishfluency.ai.data.GitHubReleaseInfo
 import com.englishfluency.ai.data.GitHubUpdater
@@ -34,6 +35,13 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
     val lessons: StateFlow<List<Lesson>> = repository.lessons
     val apiKey: StateFlow<String> = repository.apiKey
     val geminiModelId: StateFlow<String> = repository.geminiModelId
+    val availableModels: StateFlow<List<GeminiModelInfo>> = repository.availableModels
+
+    private val _isLoadingModels = MutableStateFlow(false)
+    val isLoadingModels: StateFlow<Boolean> = _isLoadingModels.asStateFlow()
+
+    private val _modelsStatusMessage = MutableStateFlow<String?>(null)
+    val modelsStatusMessage: StateFlow<String?> = _modelsStatusMessage.asStateFlow()
 
     private val _selectedLessonId = MutableStateFlow(
         repository.lessons.value.firstOrNull()?.id.orEmpty()
@@ -120,6 +128,41 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         refreshBbcCatalog()
+        if (apiKey.value.isNotBlank()) {
+            refreshAvailableModels()
+        }
+    }
+
+    fun saveApiKeyAndRefreshModels(newKey: String) {
+        repository.updateApiKey(newKey)
+        if (newKey.isNotBlank()) {
+            refreshAvailableModels()
+        }
+    }
+
+    fun refreshAvailableModels() {
+        val key = apiKey.value.trim()
+        if (key.isBlank()) {
+            _modelsStatusMessage.value = "Сначала укажите Gemini API Key, чтобы загрузить список доступных моделей из API."
+            return
+        }
+        viewModelScope.launch {
+            _isLoadingModels.value = true
+            _modelsStatusMessage.value = "Запрос списка актуальных моделей из Google Gemini API..."
+            runCatching {
+                geminiService.fetchAvailableModels(key)
+            }.fold(
+                onSuccess = { models ->
+                    repository.updateAvailableModels(models)
+                    _isLoadingModels.value = false
+                    _modelsStatusMessage.value = "✅ Загружено доступных моделей из API: ${models.size}"
+                },
+                onFailure = { err ->
+                    _isLoadingModels.value = false
+                    _modelsStatusMessage.value = "Ошибка загрузки моделей: ${err.localizedMessage}"
+                }
+            )
+        }
     }
 
     fun refreshBbcCatalog() {

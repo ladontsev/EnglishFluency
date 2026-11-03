@@ -60,6 +60,75 @@ class GeminiTutorService(
     }
 
     /**
+     * Dynamically fetches the list of available Gemini models directly from Google's API
+     * (GET https://generativelanguage.googleapis.com/v1beta/models?key=...).
+     */
+    suspend fun fetchAvailableModels(apiKey: String): List<GeminiModelInfo> = withContext(Dispatchers.IO) {
+        val key = requireApiKey(apiKey)
+        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models?key=$key&pageSize=100"
+        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15_000
+            readTimeout = 20_000
+        }
+
+        val status = conn.responseCode
+        val body = (if (status in 200..299) conn.inputStream else conn.errorStream)
+            .bufferedReader(Charsets.UTF_8)
+            .use { it.readText() }
+
+        if (status !in 200..299) {
+            throw IllegalStateException("Ошибка получения списка моделей HTTP $status: $body")
+        }
+
+        val root = json.parseToJsonElement(body).jsonObject
+        val modelsArray = root["models"]?.jsonArray ?: return@withContext emptyList()
+
+        val result = mutableListOf<GeminiModelInfo>()
+        for (elem in modelsArray) {
+            val obj = elem.jsonObject
+            val rawName = obj["name"]?.jsonPrimitive?.content.orEmpty()
+            val id = rawName.removePrefix("models/")
+            if (!id.startsWith("gemini-")) continue
+
+            // Filter out specialized non-multimodal-chat models
+            val lower = id.lowercase()
+            if (lower.contains("embedding") ||
+                lower.contains("tts") ||
+                lower.contains("image") ||
+                lower.contains("vision") ||
+                lower.contains("robotics") ||
+                lower.contains("computer-use") ||
+                lower.contains("aqa")
+            ) {
+                continue
+            }
+
+            val methods = obj["supportedGenerationMethods"]?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.content }
+                .orEmpty()
+            if (!methods.contains("generateContent")) continue
+
+            val displayName = obj["displayName"]?.jsonPrimitive?.content.orEmpty().ifBlank { id }
+            val description = obj["description"]?.jsonPrimitive?.content.orEmpty()
+            result.add(
+                GeminiModelInfo(
+                    id = id,
+                    displayName = displayName,
+                    description = description
+                )
+            )
+        }
+
+        result.sortedWith(
+            compareByDescending<GeminiModelInfo> { it.id.contains("gemini-3") }
+                .thenByDescending { it.id.contains("gemini-2.5") }
+                .thenByDescending { it.id.contains("flash") }
+                .thenByDescending { it.id }
+        )
+    }
+
+    /**
      * Dynamically generates the opening welcome message & first question for a lesson via Gemini.
      */
     suspend fun generateOpeningQuestion(

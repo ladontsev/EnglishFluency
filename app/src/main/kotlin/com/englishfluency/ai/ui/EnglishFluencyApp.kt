@@ -2209,11 +2209,22 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
     val uriHandler = LocalUriHandler.current
     val apiKey by vm.apiKey.collectAsState()
     val geminiModelId by vm.geminiModelId.collectAsState()
+    val availableModels by vm.availableModels.collectAsState()
+    val isLoadingModels by vm.isLoadingModels.collectAsState()
+    val modelsStatusMessage by vm.modelsStatusMessage.collectAsState()
+
     val lessons by vm.lessons.collectAsState()
     val allVocab = lessons.flatMap { it.vocabulary }
     var keyInput by rememberSaveable(apiKey) { mutableStateOf(apiKey) }
     var modelInput by rememberSaveable(geminiModelId) { mutableStateOf(geminiModelId) }
+    var showAllModels by rememberSaveable { mutableStateOf(false) }
     var statusBanner by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(apiKey) {
+        if (apiKey.isNotBlank() && availableModels.isEmpty() && !isLoadingModels) {
+            vm.refreshAvailableModels()
+        }
+    }
 
     val isCheckingUpdate by vm.isCheckingUpdate.collectAsState()
     val latestRelease by vm.latestRelease.collectAsState()
@@ -2323,40 +2334,103 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
         item {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Ключ и модель Google Gemini API (Multimodal Audio + Text)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "По умолчанию используется свежая модель Gemini 3 Flash (gemini-3-flash-preview), также можно переключиться на Gemini 3.1 Pro или вписать любой новый ID модели.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = "Выбор модели ИИ:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        FluencyRepository.AVAILABLE_MODELS.forEach { (id, label) ->
-                            FilterChip(
-                                selected = modelInput == id,
-                                onClick = {
-                                    modelInput = id
-                                    vm.repository.updateGeminiModelId(id)
-                                    statusBanner = "✅ Выбрана модель: $id"
-                                },
-                                label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Ключ и динамический выбор модели Gemini API",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Список доступных моделей запрашивается напрямую из Google Gemini API (v1beta/models) для вашего ключа.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        IconButton(
+                            onClick = { vm.refreshAvailableModels() },
+                            enabled = !isLoadingModels && apiKey.isNotBlank()
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Обновить список моделей из API")
+                        }
                     }
+
+                    Spacer(Modifier.height(10.dp))
+                    if (isLoadingModels) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = modelsStatusMessage ?: "Загрузка моделей из API...",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    } else if (modelsStatusMessage != null) {
+                        Text(
+                            text = modelsStatusMessage!!,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+
+                    if (availableModels.isNotEmpty()) {
+                        Text(
+                            text = "Доступные модели из вашего аккаунта (${availableModels.size}):",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        val visibleModels = if (showAllModels) availableModels else availableModels.take(6)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            visibleModels.forEach { m ->
+                                FilterChip(
+                                    selected = modelInput == m.id,
+                                    onClick = {
+                                        modelInput = m.id
+                                        vm.repository.updateGeminiModelId(m.id)
+                                        statusBanner = "✅ Выбрана модель: ${m.displayName} (${m.id})"
+                                    },
+                                    label = {
+                                        Text(
+                                            text = "${m.displayName} (${m.id})",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                        if (availableModels.size > 6) {
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedButton(
+                                onClick = { showAllModels = !showAllModels },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (showAllModels) "Скрыть полный список моделей" else "Показать все модели (${availableModels.size})"
+                                )
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { vm.refreshAvailableModels() },
+                            enabled = !isLoadingModels && apiKey.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Загрузить список доступных моделей из Gemini API")
+                        }
+                    }
+
                     Spacer(Modifier.height(6.dp))
                     OutlinedTextField(
                         value = modelInput,
@@ -2364,7 +2438,7 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
                             modelInput = it
                             vm.repository.updateGeminiModelId(it)
                         },
-                        label = { Text("ID модели Gemini (можно указать свой)") },
+                        label = { Text("Активный ID модели Gemini") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -2391,8 +2465,8 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
                             val clipText = clipboardManager.getText()?.text?.trim().orEmpty()
                             if (clipText.isNotBlank()) {
                                 keyInput = clipText
-                                vm.repository.updateApiKey(clipText)
-                                statusBanner = "✅ Ключ вставлен из буфера обмена и сохранен!"
+                                vm.saveApiKeyAndRefreshModels(clipText)
+                                statusBanner = "✅ Ключ вставлен из буфера, загружаем список моделей..."
                             } else {
                                 statusBanner = "⚠️ Буфер обмена пуст. Скопируйте ключ в AI Studio."
                             }
@@ -2421,8 +2495,8 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = {
-                            vm.repository.updateApiKey(keyInput)
-                            statusBanner = "✅ Ключ сохранен локально на устройстве."
+                            vm.saveApiKeyAndRefreshModels(keyInput)
+                            statusBanner = "✅ Ключ сохранен, обновляем список моделей..."
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {

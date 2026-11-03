@@ -11,6 +11,13 @@ data class BbcCatalogItem(
 )
 
 @Serializable
+data class GeminiModelInfo(
+    val id: String,
+    val displayName: String,
+    val description: String = ""
+)
+
+@Serializable
 data class VocabularyItem(
     val id: String,
     val lessonId: String,

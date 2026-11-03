@@ -14,6 +14,7 @@ import kotlin.math.max
 private data class PersistedAppState(
     val apiKey: String = "",
     val geminiModelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
+    val availableModels: List<GeminiModelInfo> = emptyList(),
     val lessons: List<Lesson> = emptyList(),
     val conversationsByLesson: Map<String, List<ChatMessage>> = emptyMap(),
     val srsChallengesCache: Map<String, SrsChallenge> = emptyMap()
@@ -23,12 +24,6 @@ class FluencyRepository(context: Context) {
 
     companion object {
         const val DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
-        val AVAILABLE_MODELS = listOf(
-            "gemini-3-flash-preview" to "Gemini 3 Flash (Свежая, быстрая + аудио)",
-            "gemini-3.1-pro-preview" to "Gemini 3.1 Pro (Максимальная глубина разбора)",
-            "gemini-2.5-flash" to "Gemini 2.5 Flash (Стабильная классика)",
-            "gemini-2.5-pro" to "Gemini 2.5 Pro"
-        )
     }
 
     private val appContext = context.applicationContext
@@ -46,6 +41,9 @@ class FluencyRepository(context: Context) {
 
     private val _geminiModelId = MutableStateFlow(DEFAULT_GEMINI_MODEL)
     val geminiModelId: StateFlow<String> = _geminiModelId.asStateFlow()
+
+    private val _availableModels = MutableStateFlow<List<GeminiModelInfo>>(emptyList())
+    val availableModels: StateFlow<List<GeminiModelInfo>> = _availableModels.asStateFlow()
 
     private val _lessons = MutableStateFlow<List<Lesson>>(emptyList())
     val lessons: StateFlow<List<Lesson>> = _lessons.asStateFlow()
@@ -84,6 +82,7 @@ class FluencyRepository(context: Context) {
         if (loaded != null) {
             _apiKey.value = loaded.apiKey
             _geminiModelId.value = loaded.geminiModelId.ifBlank { DEFAULT_GEMINI_MODEL }
+            _availableModels.value = loaded.availableModels
             _lessons.value = loaded.lessons
             _conversations.value = loaded.conversationsByLesson
             _srsChallengesCache.value = loaded.srsChallengesCache
@@ -96,6 +95,7 @@ class FluencyRepository(context: Context) {
             val state = PersistedAppState(
                 apiKey = _apiKey.value,
                 geminiModelId = _geminiModelId.value,
+                availableModels = _availableModels.value,
                 lessons = _lessons.value,
                 conversationsByLesson = _conversations.value,
                 srsChallengesCache = _srsChallengesCache.value
@@ -111,6 +111,11 @@ class FluencyRepository(context: Context) {
 
     fun updateGeminiModelId(modelId: String) {
         _geminiModelId.value = modelId.trim().ifBlank { DEFAULT_GEMINI_MODEL }
+        saveToDisk()
+    }
+
+    fun updateAvailableModels(models: List<GeminiModelInfo>) {
+        _availableModels.value = models
         saveToDisk()
     }
 
