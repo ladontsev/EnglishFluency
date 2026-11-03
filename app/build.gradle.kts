@@ -11,8 +11,8 @@ android {
     applicationId = "com.englishfluency.ai"
     minSdk = 24
     targetSdk = 36
-    versionCode = 9
-    versionName = "1.1.4"
+    versionCode = 10
+    versionName = "1.2.0"
   }
 
   buildTypes {

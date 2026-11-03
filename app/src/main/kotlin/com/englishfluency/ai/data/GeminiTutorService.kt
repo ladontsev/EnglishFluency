@@ -123,6 +123,7 @@ class GeminiTutorService(
                - Native phrasing / idioms (how an educated native speaker would naturally phrase the student's exact idea).
                - Pronunciation & intonation (listen carefully to the attached audio if present, or analyze phonetic challenges of the words they used: word stress, linking, weak forms, rising/falling intonation, in Russian, plus word-by-word IPA breakdown).
             4. If the student made a notable mistake or missed a great opportunity to use a target phrase, set "repeatPrompt" to a short natural sentence containing that target phrase and ask them in your reply to try saying it out loud, or ask the next engaging follow-up question on the lesson topic.
+            5. If the student made a grammar/collocation mistake, Russian calque, or awkward phrasing, populate "personalMistakeToLearn" with the natural English expression/construction they should practice in Spaced Repetition (SRS); otherwise set "personalMistakeToLearn" to null.
             
             Return ONLY valid JSON matching this exact structure:
             {
@@ -146,7 +147,15 @@ class GeminiTutorService(
                     "tipRu": "Краткий совет по произношению этого слова на русском (ударение, звук, связка)"
                   }
                 ],
-                "repeatPrompt": "Optional short English sentence for the student to repeat out loud, or null"
+                "repeatPrompt": "Optional short English sentence for the student to repeat out loud, or null",
+                "personalMistakeToLearn": {
+                  "expression": "The exact natural English collocation, phrasal verb, or grammar pattern the student needed here",
+                  "definitionEn": "Brief explanation of why native speakers use this construction instead of the student's phrasing",
+                  "translationRu": "Точный перевод на русский язык",
+                  "exampleSentence": "Corrected natural sentence using this expression",
+                  "synonyms": ["Alternative natural phrasing 1", "Alternative 2"],
+                  "userOriginalMistake": "The exact awkward/incorrect part the student said"
+                }
               }
             }
         """.trimIndent()

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.englishfluency.ai.audio.VoiceSessionController
+import com.englishfluency.ai.data.BbcCatalogItem
 import com.englishfluency.ai.data.BbcLessonParser
 import com.englishfluency.ai.data.ChatMessage
 import com.englishfluency.ai.data.FluencyRepository
@@ -15,6 +16,7 @@ import com.englishfluency.ai.data.MessageSender
 import com.englishfluency.ai.data.SrsChallenge
 import com.englishfluency.ai.data.SrsEvaluationResult
 import com.englishfluency.ai.data.SrsExerciseMode
+import com.englishfluency.ai.data.SrsFilterCategory
 import com.englishfluency.ai.data.VocabularyItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,8 +40,21 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
     )
     val selectedLessonId: StateFlow<String> = _selectedLessonId.asStateFlow()
 
+    // Live BBC 6 Minute English Catalog (Stage 2 v1.2)
+    private val _bbcCatalogItems = MutableStateFlow<List<BbcCatalogItem>>(emptyList())
+    val bbcCatalogItems: StateFlow<List<BbcCatalogItem>> = _bbcCatalogItems.asStateFlow()
+
+    private val _isLoadingCatalog = MutableStateFlow(false)
+    val isLoadingCatalog: StateFlow<Boolean> = _isLoadingCatalog.asStateFlow()
+
+    private val _catalogError = MutableStateFlow<String?>(null)
+    val catalogError: StateFlow<String?> = _catalogError.asStateFlow()
+
     private val _isLoadingUrl = MutableStateFlow(false)
     val isLoadingUrl: StateFlow<Boolean> = _isLoadingUrl.asStateFlow()
+
+    private val _importingUrl = MutableStateFlow<String?>(null)
+    val importingUrl: StateFlow<String?> = _importingUrl.asStateFlow()
 
     private val _urlImportStatus = MutableStateFlow<String?>(null)
     val urlImportStatus: StateFlow<String?> = _urlImportStatus.asStateFlow()
@@ -50,9 +65,12 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
     private val _conversationError = MutableStateFlow<String?>(null)
     val conversationError: StateFlow<String?> = _conversationError.asStateFlow()
 
-    // SRS Review State (100% Dynamic via Gemini)
+    // SRS Review State (100% Dynamic via Gemini + Stage 2 Personal Mistakes & 5-Min Sprint)
     private val _selectedSrsMode = MutableStateFlow(SrsExerciseMode.RU_TO_EN)
     val selectedSrsMode: StateFlow<SrsExerciseMode> = _selectedSrsMode.asStateFlow()
+
+    private val _selectedSrsFilter = MutableStateFlow(SrsFilterCategory.ALL)
+    val selectedSrsFilter: StateFlow<SrsFilterCategory> = _selectedSrsFilter.asStateFlow()
 
     private val _currentSrsVocabId = MutableStateFlow<String?>(null)
     val currentSrsVocabId: StateFlow<String?> = _currentSrsVocabId.asStateFlow()
@@ -72,6 +90,19 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
     private val _isEvaluatingSrs = MutableStateFlow(false)
     val isEvaluatingSrs: StateFlow<Boolean> = _isEvaluatingSrs.asStateFlow()
 
+    // 5-Minute Voice Sprint State (Stage 2 v1.2)
+    private val _sprintQueueIds = MutableStateFlow<List<String>>(emptyList())
+    val sprintQueueIds: StateFlow<List<String>> = _sprintQueueIds.asStateFlow()
+
+    private val _sprintCurrentIndex = MutableStateFlow(0)
+    val sprintCurrentIndex: StateFlow<Int> = _sprintCurrentIndex.asStateFlow()
+
+    private val _sprintPassedCount = MutableStateFlow(0)
+    val sprintPassedCount: StateFlow<Int> = _sprintPassedCount.asStateFlow()
+
+    private val _isSprintFinished = MutableStateFlow(false)
+    val isSprintFinished: StateFlow<Boolean> = _isSprintFinished.asStateFlow()
+
     // GitHub Self-Update State
     val currentVersionName: String = GitHubUpdater.getCurrentAppVersion(application)
 
@@ -86,6 +117,28 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     private val _downloadProgress = MutableStateFlow<Int?>(null)
     val downloadProgress: StateFlow<Int?> = _downloadProgress.asStateFlow()
+
+    init {
+        refreshBbcCatalog()
+    }
+
+    fun refreshBbcCatalog() {
+        viewModelScope.launch {
+            _isLoadingCatalog.value = true
+            _catalogError.value = null
+            val result = BbcLessonParser.fetchLatestEpisodeCatalog(limit = 35)
+            result.fold(
+                onSuccess = { items ->
+                    _bbcCatalogItems.value = items
+                    _isLoadingCatalog.value = false
+                },
+                onFailure = { err ->
+                    _catalogError.value = "Не удалось загрузить каталог BBC: ${err.localizedMessage}"
+                    _isLoadingCatalog.value = false
+                }
+            )
+        }
+    }
 
     fun checkForGitHubUpdates() {
         viewModelScope.launch {
@@ -157,10 +210,12 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
             _urlImportStatus.value = "⚠️ Сначала укажите ваш Gemini API Key во вкладке «Настройки»!"
             return
         }
+        val cleanUrl = url.trim()
         viewModelScope.launch {
             _isLoadingUrl.value = true
-            _urlImportStatus.value = "Загрузка страницы BBC Learning English и ИИ-извлечение словаря..."
-            val scrapedResult = BbcLessonParser.fetchRawPageContent(url.trim())
+            _importingUrl.value = cleanUrl
+            _urlImportStatus.value = "Загрузка выпуска BBC и ИИ-извлечение словаря..."
+            val scrapedResult = BbcLessonParser.fetchRawPageContent(cleanUrl)
             scrapedResult.fold(
                 onSuccess = { scraped ->
                     runCatching {
@@ -181,15 +236,18 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
                         _selectedLessonId.value = lesson.id
                         _urlImportStatus.value = "✅ Урок «${lesson.title}» (${lesson.vocabulary.size} выражений) загружен!"
                         _isLoadingUrl.value = false
+                        _importingUrl.value = null
                         onSuccess(lesson)
                     }.onFailure { aiErr ->
                         _urlImportStatus.value = "Ошибка Gemini API: ${aiErr.localizedMessage}"
                         _isLoadingUrl.value = false
+                        _importingUrl.value = null
                     }
                 },
                 onFailure = { err ->
                     _urlImportStatus.value = "Ошибка загрузки страницы: ${err.localizedMessage}"
                     _isLoadingUrl.value = false
+                    _importingUrl.value = null
                 }
             )
         }
@@ -241,6 +299,12 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
                         expressionsUsed = response.analysis.targetVocabUsed,
                         pronunciationScore = response.analysis.pronunciationScore
                     )
+
+                    // Automatically capture personal mistake into SRS if Gemini identified one
+                    val mistake = response.analysis.personalMistakeToLearn
+                    if (mistake != null && mistake.expression.isNotBlank()) {
+                        repository.addPersonalMistakeToLesson(lesson.id, mistake)
+                    }
 
                     _isProcessingTurn.value = false
                     voiceController.speakTutorText(response.tutorReplyEn)
@@ -321,6 +385,11 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun setSrsFilter(filter: SrsFilterCategory) {
+        _selectedSrsFilter.value = filter
+        _lastSrsResult.value = null
+    }
+
     fun selectSrsVocab(vocabId: String) {
         _currentSrsVocabId.value = vocabId
         _lastSrsResult.value = null
@@ -330,9 +399,59 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun nextSrsVocab() {
+    fun startFiveMinuteSprint() {
+        val now = System.currentTimeMillis()
         val all = repository.allVocabularyItems()
         if (all.isEmpty()) return
+
+        // Prioritize personal mistakes & due items, then lowest mastery
+        val prioritized = all.sortedWith(
+            compareByDescending<VocabularyItem> { it.isPersonalMistake }
+                .thenByDescending { it.nextReviewEpochMs <= now }
+                .thenBy { it.masteryLevel }
+        ).take(5)
+
+        val queue = prioritized.map { it.id }
+        _sprintQueueIds.value = queue
+        _sprintCurrentIndex.value = 0
+        _sprintPassedCount.value = 0
+        _isSprintFinished.value = false
+        _lastSrsResult.value = null
+
+        val firstItem = prioritized.first()
+        _currentSrsVocabId.value = firstItem.id
+        ensureSrsChallengeLoaded(firstItem, forceNew = true)
+    }
+
+    fun stopSprint() {
+        _sprintQueueIds.value = emptyList()
+        _sprintCurrentIndex.value = 0
+        _sprintPassedCount.value = 0
+        _isSprintFinished.value = false
+    }
+
+    fun nextSrsVocab() {
+        val sprintQueue = _sprintQueueIds.value
+        val all = repository.allVocabularyItems()
+        if (all.isEmpty()) return
+
+        if (sprintQueue.isNotEmpty() && !_isSprintFinished.value) {
+            val nextSprintIdx = _sprintCurrentIndex.value + 1
+            if (nextSprintIdx >= sprintQueue.size) {
+                _isSprintFinished.value = true
+                _lastSrsResult.value = null
+                return
+            } else {
+                _sprintCurrentIndex.value = nextSprintIdx
+                val nextId = sprintQueue[nextSprintIdx]
+                val nextItem = all.find { it.id == nextId } ?: all.first()
+                _currentSrsVocabId.value = nextItem.id
+                _lastSrsResult.value = null
+                ensureSrsChallengeLoaded(nextItem, forceNew = true)
+                return
+            }
+        }
+
         val currentIdx = all.indexOfFirst { it.id == _currentSrsVocabId.value }
         val nextIdx = if (currentIdx < 0 || currentIdx + 1 >= all.size) 0 else currentIdx + 1
         val nextItem = all[nextIdx]
@@ -368,6 +487,9 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
                         passed = result.passed,
                         score = result.score
                     )
+                    if (_sprintQueueIds.value.isNotEmpty() && result.passed) {
+                        _sprintPassedCount.value = _sprintPassedCount.value + 1
+                    }
                     _lastSrsResult.value = result.copy(audioFilePath = audioFile?.absolutePath)
                     _isEvaluatingSrs.value = false
                 },

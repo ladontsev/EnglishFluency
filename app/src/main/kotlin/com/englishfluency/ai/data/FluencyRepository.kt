@@ -244,6 +244,46 @@ class FluencyRepository(context: Context) {
         saveToDisk()
     }
 
+    fun addPersonalMistakeToLesson(lessonId: String, mistake: PersonalMistakeItem): VocabularyItem? {
+        val cleanExpr = mistake.expression.trim()
+        if (cleanExpr.isBlank()) return null
+
+        var addedItem: VocabularyItem? = null
+        _lessons.value = _lessons.value.map { lesson ->
+            if (lesson.id != lessonId) {
+                lesson
+            } else {
+                val alreadyExists = lesson.vocabulary.any {
+                    it.expression.equals(cleanExpr, ignoreCase = true)
+                }
+                if (alreadyExists) {
+                    lesson
+                } else {
+                    val newItem = VocabularyItem(
+                        id = "${lesson.id}_err_${System.currentTimeMillis()}",
+                        lessonId = lesson.id,
+                        expression = cleanExpr,
+                        definitionEn = mistake.definitionEn.ifBlank { cleanExpr },
+                        translationRu = mistake.translationRu.ifBlank { cleanExpr },
+                        exampleSentence = mistake.exampleSentence.ifBlank { cleanExpr },
+                        synonyms = mistake.synonyms,
+                        masteryLevel = 0,
+                        intervalDays = 0,
+                        nextReviewEpochMs = 0L,
+                        isPersonalMistake = true,
+                        userOriginalMistake = mistake.userOriginalMistake
+                    )
+                    addedItem = newItem
+                    lesson.copy(vocabulary = lesson.vocabulary + newItem)
+                }
+            }
+        }
+        if (addedItem != null) {
+            saveToDisk()
+        }
+        return addedItem
+    }
+
     fun allVocabularyItems(): List<VocabularyItem> {
         return _lessons.value.flatMap { it.vocabulary }
     }

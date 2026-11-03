@@ -3,6 +3,14 @@ package com.englishfluency.ai.data
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class BbcCatalogItem(
+    val episodeSlug: String,
+    val title: String,
+    val url: String,
+    val dateFormatted: String
+)
+
+@Serializable
 data class VocabularyItem(
     val id: String,
     val lessonId: String,
@@ -16,7 +24,10 @@ data class VocabularyItem(
     val intervalDays: Int = 0,
     val nextReviewEpochMs: Long = 0L,
     val timesUsedInConversation: Int = 0,
-    val lastPronunciationScore: Int? = null
+    val lastPronunciationScore: Int? = null,
+    // Stage 2 (v1.2): Personal mistake tracking
+    val isPersonalMistake: Boolean = false,
+    val userOriginalMistake: String = ""
 )
 
 @Serializable
@@ -41,6 +52,16 @@ data class WordPronunciationItem(
 )
 
 @Serializable
+data class PersonalMistakeItem(
+    val expression: String = "",
+    val definitionEn: String = "",
+    val translationRu: String = "",
+    val exampleSentence: String = "",
+    val synonyms: List<String> = emptyList(),
+    val userOriginalMistake: String = ""
+)
+
+@Serializable
 data class SpeechAnalysis(
     val userTranscript: String,
     val overallScore: Int, // 0..100
@@ -53,7 +74,8 @@ data class SpeechAnalysis(
     val pronunciationNotes: String = "",
     val intonationNotes: String = "",
     val wordBreakdown: List<WordPronunciationItem> = emptyList(),
-    val repeatPrompt: String? = null // If tutor asks user to repeat a specific phrase
+    val repeatPrompt: String? = null, // If tutor asks user to repeat a specific phrase
+    val personalMistakeToLearn: PersonalMistakeItem? = null
 )
 
 @Serializable
@@ -85,6 +107,12 @@ enum class SrsExerciseMode(val titleRu: String, val subtitleRu: String) {
         "Контекстный ответ вслух",
         "Ответьте голосом на вопрос тьютора, обязательно ввернув выражение на карточке"
     )
+}
+
+enum class SrsFilterCategory(val labelRu: String) {
+    ALL("Все выражения"),
+    PERSONAL_MISTAKES("⚠️ Мои ошибки"),
+    DUE_TODAY("🔥 На сегодня")
 }
 
 @Serializable

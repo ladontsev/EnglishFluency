@@ -105,6 +105,7 @@ import com.englishfluency.ai.data.Lesson
 import com.englishfluency.ai.data.MessageSender
 import com.englishfluency.ai.data.SpeechAnalysis
 import com.englishfluency.ai.data.SrsExerciseMode
+import com.englishfluency.ai.data.SrsFilterCategory
 import com.englishfluency.ai.data.VocabularyItem
 import com.englishfluency.ai.data.WordPronunciationItem
 import java.io.File
@@ -233,16 +234,35 @@ private fun LessonsHubTab(
 ) {
     val lessons by vm.lessons.collectAsState()
     val apiKey by vm.apiKey.collectAsState()
+    val bbcCatalog by vm.bbcCatalogItems.collectAsState()
+    val isLoadingCatalog by vm.isLoadingCatalog.collectAsState()
+    val catalogError by vm.catalogError.collectAsState()
     val isLoadingUrl by vm.isLoadingUrl.collectAsState()
+    val importingUrl by vm.importingUrl.collectAsState()
     val urlStatus by vm.urlImportStatus.collectAsState()
-    var bbcUrlInput by rememberSaveable {
-        mutableStateOf("https://www.bbc.co.uk/learningenglish/english/features/6-minute-english_2026/ep-261029")
+
+    var catalogSearchQuery by rememberSaveable { mutableStateOf("") }
+    var showAllCatalog by rememberSaveable { mutableStateOf(false) }
+    var showCustomUrlInput by rememberSaveable { mutableStateOf(false) }
+    var bbcUrlInput by rememberSaveable { mutableStateOf("") }
+
+    val filteredCatalog = remember(bbcCatalog, catalogSearchQuery) {
+        if (catalogSearchQuery.isBlank()) {
+            bbcCatalog
+        } else {
+            val q = catalogSearchQuery.trim().lowercase()
+            bbcCatalog.filter {
+                it.title.lowercase().contains(q) ||
+                    it.dateFormatted.contains(q) ||
+                    it.episodeSlug.lowercase().contains(q)
+            }
+        }
     }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         if (apiKey.isBlank()) {
             item {
@@ -274,77 +294,230 @@ private fun LessonsHubTab(
             }
         }
 
+        // Stage 2 (v1.2): Live BBC 6 Minute English Catalog fetched directly from BBC's website
         item {
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                 )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.AddLink,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Импорт урока BBC 6 Minute English по ссылке",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Вставьте ссылку на любой выпуск BBC Learning English: приложение скачает страницу, а ИИ динамически извлечет из неё словарь, переводы, синонимы, реплики для Shadowing и вопросы для беседы.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = bbcUrlInput,
-                        onValueChange = {
-                            bbcUrlInput = it
-                            vm.clearUrlStatus()
-                        },
-                        label = { Text("URL урока BBC Learning English") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(10.dp))
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isLoadingUrl) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = urlStatus ?: "Разбор страницы через ИИ...",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        } else {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = urlStatus ?: "Вставьте ссылку и нажмите «Загрузить»",
+                                text = "🌐 Живой каталог BBC 6 Minute English",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Свежие выпуски напрямую с сайта BBC Learning English — скачивайте любой выпуск в 1 нажатие",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                vm.importBbcLessonFromUrl(bbcUrlInput) { imported ->
-                                    onStartPractice(imported)
-                                }
-                            },
-                            enabled = !isLoadingUrl && bbcUrlInput.isNotBlank()
+                        IconButton(
+                            onClick = { vm.refreshBbcCatalog() },
+                            enabled = !isLoadingCatalog
                         ) {
-                            Text("Загрузить урок")
+                            Icon(Icons.Default.Refresh, contentDescription = "Обновить каталог с сайта BBC")
+                        }
+                    }
+
+                    if (urlStatus != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isLoadingUrl) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(
+                                    text = urlStatus!!,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = catalogSearchQuery,
+                        onValueChange = { catalogSearchQuery = it },
+                        placeholder = { Text("Поиск выпуска по теме или дате...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (isLoadingCatalog && bbcCatalog.isEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Загрузка списка свежих выпусков с bbc.co.uk...",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    } else if (catalogError != null && bbcCatalog.isEmpty()) {
+                        Text(
+                            text = catalogError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        val visibleEpisodes = if (showAllCatalog || catalogSearchQuery.isNotBlank()) {
+                            filteredCatalog.take(25)
+                        } else {
+                            filteredCatalog.take(5)
+                        }
+
+                        visibleEpisodes.forEach { ep ->
+                            val alreadyImported = lessons.find {
+                                it.sourceUrl == ep.url || it.dateLabel == ep.episodeSlug
+                            }
+                            val isImportingThis = isLoadingUrl && importingUrl == ep.url
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${ep.dateFormatted} • ${ep.episodeSlug}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = ep.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    if (alreadyImported != null) {
+                                        OutlinedButton(
+                                            onClick = { onStartPractice(alreadyImported) },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Открыть", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = {
+                                                vm.importBbcLessonFromUrl(ep.url) { imported ->
+                                                    onStartPractice(imported)
+                                                }
+                                            },
+                                            enabled = !isLoadingUrl,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            if (isImportingThis) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(15.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("Разбор...", style = MaterialTheme.typography.labelSmall)
+                                            } else {
+                                                Text("⬇️ Разбор ИИ", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (filteredCatalog.size > 5 && catalogSearchQuery.isBlank()) {
+                            OutlinedButton(
+                                onClick = { showAllCatalog = !showAllCatalog },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    if (showAllCatalog) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    if (showAllCatalog) "Свернуть каталог" else "Показать ещё выпуски (${filteredCatalog.size})"
+                                )
+                            }
+                        }
+                    }
+
+                    // Toggle for pasting any custom BBC URL manually
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showCustomUrlInput = !showCustomUrlInput }
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.AddLink,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (showCustomUrlInput) "Скрыть ручной ввод URL ▲" else "Вставить произвольную ссылку вручную ▼",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    AnimatedVisibility(visible = showCustomUrlInput) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = bbcUrlInput,
+                                onValueChange = {
+                                    bbcUrlInput = it
+                                    vm.clearUrlStatus()
+                                },
+                                label = { Text("URL урока BBC Learning English") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick = {
+                                    vm.importBbcLessonFromUrl(bbcUrlInput) { imported ->
+                                        onStartPractice(imported)
+                                    }
+                                },
+                                enabled = !isLoadingUrl && bbcUrlInput.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Загрузить по ссылке")
+                            }
                         }
                     }
                 }
@@ -1356,6 +1529,30 @@ private fun UserMessageWithAnalysisCard(
                         )
                     }
 
+                    // Stage 2 (v1.2): Personal mistake automatically captured into SRS
+                    val mistake = analysis.personalMistakeToLearn
+                    if (mistake != null && mistake.expression.isNotBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSpeakText("${mistake.expression}. ${mistake.exampleSentence}") }
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = "📌 Добавлено в «Мои ошибки» (SRS): ${mistake.expression}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${mistake.translationRu} • ${mistake.exampleSentence}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+
                     // 5. Repeat Prompt button
                     if (!analysis.repeatPrompt.isNullOrBlank()) {
                         OutlinedButton(
@@ -1396,13 +1593,13 @@ private fun SrsActiveTrainerTab(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Загрузите любой урок BBC Learning English по ссылке на вкладке «Уроки BBC», и ИИ автоматически извлечет из него выражения для тренировки.",
+                    text = "Скачайте любой выпуск из живого каталога BBC Learning English на вкладке «Уроки BBC», и ИИ автоматически извлечет из него выражения для тренировки.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = onGoToLessons) {
-                    Text("Загрузить урок по ссылке")
+                    Text("Перейти в каталог BBC")
                 }
             }
         }
@@ -1411,18 +1608,36 @@ private fun SrsActiveTrainerTab(
 
     val currentVocabId by vm.currentSrsVocabId.collectAsState()
     val selectedMode by vm.selectedSrsMode.collectAsState()
+    val selectedFilter by vm.selectedSrsFilter.collectAsState()
     val currentChallenge by vm.currentSrsChallenge.collectAsState()
     val isGeneratingChallenge by vm.isGeneratingChallenge.collectAsState()
     val srsError by vm.srsError.collectAsState()
     val lastResult by vm.lastSrsResult.collectAsState()
     val isEvaluating by vm.isEvaluatingSrs.collectAsState()
 
+    val sprintQueueIds by vm.sprintQueueIds.collectAsState()
+    val sprintCurrentIndex by vm.sprintCurrentIndex.collectAsState()
+    val sprintPassedCount by vm.sprintPassedCount.collectAsState()
+    val isSprintFinished by vm.isSprintFinished.collectAsState()
+
     val isRecording by vm.voiceController.isRecording.collectAsState()
     val livePartial by vm.voiceController.livePartialTranscript.collectAsState()
     val playingAudioPath by vm.voiceController.playingAudioPath.collectAsState()
     val lastRecordedAudioPath by vm.voiceController.lastRecordedAudioPath.collectAsState()
 
-    val currentVocab = allVocab.find { it.id == currentVocabId } ?: allVocab.first()
+    val now = System.currentTimeMillis()
+    val personalMistakesList = allVocab.filter { it.isPersonalMistake }
+    val dueTodayList = allVocab.filter { it.nextReviewEpochMs <= now }
+
+    val filteredVocabList = when (selectedFilter) {
+        SrsFilterCategory.ALL -> allVocab
+        SrsFilterCategory.PERSONAL_MISTAKES -> personalMistakesList
+        SrsFilterCategory.DUE_TODAY -> dueTodayList
+    }
+
+    val currentVocab = allVocab.find { it.id == currentVocabId }
+        ?: filteredVocabList.firstOrNull()
+        ?: allVocab.first()
     var userAttemptText by rememberSaveable(currentVocab.id, selectedMode) { mutableStateOf("") }
 
     LaunchedEffect(lastResult) {
@@ -1461,6 +1676,91 @@ private fun SrsActiveTrainerTab(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Stage 2 (v1.2): 5-Minute Voice Sprint Banner / Progress Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (sprintQueueIds.isEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "⚡ 5-минутный голосовой спринт",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "На сегодня к повторению: ${dueTodayList.size} • Личных ошибок: ${personalMistakesList.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    userAttemptText = ""
+                                    vm.startFiveMinuteSprint()
+                                }
+                            ) {
+                                Text("Старт (5 карт)")
+                            }
+                        }
+                    } else if (isSprintFinished) {
+                        Text(
+                            text = "🎉 Голосовой спринт завершён! Успешно пройдено: $sprintPassedCount из ${sprintQueueIds.size}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    userAttemptText = ""
+                                    vm.startFiveMinuteSprint()
+                                }
+                            ) {
+                                Text("Ещё один спринт")
+                            }
+                            OutlinedButton(onClick = { vm.stopSprint() }) {
+                                Text("К свободному режиму")
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚡ Спринт: карточка ${sprintCurrentIndex + 1} из ${sprintQueueIds.size} • Успешно: $sprintPassedCount",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            OutlinedButton(
+                                onClick = { vm.stopSprint() },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("Стоп", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        LinearProgressIndicator(
+                            progress = { (sprintCurrentIndex + 1).toFloat() / sprintQueueIds.size.coerceAtLeast(1) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                        )
+                    }
+                }
+            }
+        }
+
         // Mode Selector
         item {
             Text(
@@ -1490,6 +1790,32 @@ private fun SrsActiveTrainerTab(
                 shape = RoundedCornerShape(18.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    if (currentVocab.isPersonalMistake) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = "⚠️ Личная карточка ошибки из вашего диалога",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                if (currentVocab.userOriginalMistake.isNotBlank()) {
+                                    Text(
+                                        text = "В беседе вы сказали: \"${currentVocab.userOriginalMistake}\"",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1784,22 +2110,50 @@ private fun SrsActiveTrainerTab(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Следующее выражение →")
+                            Text(
+                                if (sprintQueueIds.isNotEmpty() && !isSprintFinished) {
+                                    "Следующая карточка спринта →"
+                                } else {
+                                    "Следующее выражение →"
+                                }
+                            )
                         }
                     }
                 }
             }
         }
 
-        // All saved expressions list
+        // Filter Chips + All saved expressions list
         item {
             Text(
-                text = "Все выражения из ваших уроков (${allVocab.size}):",
+                text = "Список выражений для тренировки:",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FilterChip(
+                    selected = selectedFilter == SrsFilterCategory.ALL,
+                    onClick = { vm.setSrsFilter(SrsFilterCategory.ALL) },
+                    label = { Text("Все (${allVocab.size})") }
+                )
+                FilterChip(
+                    selected = selectedFilter == SrsFilterCategory.PERSONAL_MISTAKES,
+                    onClick = { vm.setSrsFilter(SrsFilterCategory.PERSONAL_MISTAKES) },
+                    label = { Text("⚠️ Мои ошибки (${personalMistakesList.size})") }
+                )
+                FilterChip(
+                    selected = selectedFilter == SrsFilterCategory.DUE_TODAY,
+                    onClick = { vm.setSrsFilter(SrsFilterCategory.DUE_TODAY) },
+                    label = { Text("🔥 На сегодня (${dueTodayList.size})") }
+                )
+            }
         }
-        items(allVocab, key = { it.id }) { item ->
+
+        items(filteredVocabList, key = { it.id }) { item ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1813,9 +2167,17 @@ private fun SrsActiveTrainerTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(item.expression, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (item.isPersonalMistake) {
+                                Text(
+                                    text = "⚠️ ",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                            Text(item.expression, fontWeight = FontWeight.Bold)
+                        }
                         Text(
-                            "${item.translationRu} • Синонимы: ${item.synonyms.joinToString(", ")}",
+                            "${item.translationRu}${if (item.synonyms.isNotEmpty()) " • Синонимы: ${item.synonyms.joinToString(", ")}" else ""}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
