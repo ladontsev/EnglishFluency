@@ -368,7 +368,7 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
                         passed = result.passed,
                         score = result.score
                     )
-                    _lastSrsResult.value = result
+                    _lastSrsResult.value = result.copy(audioFilePath = audioFile?.absolutePath)
                     _isEvaluatingSrs.value = false
                 },
                 onFailure = { err ->

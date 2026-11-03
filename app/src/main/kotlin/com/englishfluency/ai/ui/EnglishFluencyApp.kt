@@ -490,6 +490,7 @@ private fun PushToTalkCoachTab(
     val isRecording by vm.voiceController.isRecording.collectAsState()
     val livePartialTranscript by vm.voiceController.livePartialTranscript.collectAsState()
     val playingAudioPath by vm.voiceController.playingAudioPath.collectAsState()
+    val lastRecordedAudioPath by vm.voiceController.lastRecordedAudioPath.collectAsState()
     val speechRate by vm.voiceController.speechRate.collectAsState()
     val isProcessingTurn by vm.isProcessingTurn.collectAsState()
     val conversationError by vm.conversationError.collectAsState()
@@ -778,6 +779,28 @@ private fun PushToTalkCoachTab(
                                 )
                             }
                         }
+                    }
+                }
+
+                if (!isRecording && !lastRecordedAudioPath.isNullOrBlank() && File(lastRecordedAudioPath!!).exists()) {
+                    val isPlayingLast = playingAudioPath == lastRecordedAudioPath
+                    OutlinedButton(
+                        onClick = { vm.voiceController.playRecordedFile(lastRecordedAudioPath!!) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            if (isPlayingLast) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (isPlayingLast) "Остановить воспроизведение записи" else "🎙 Прослушать мою последнюю запись",
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
 
@@ -1229,9 +1252,18 @@ private fun SrsActiveTrainerTab(
 
     val isRecording by vm.voiceController.isRecording.collectAsState()
     val livePartial by vm.voiceController.livePartialTranscript.collectAsState()
+    val playingAudioPath by vm.voiceController.playingAudioPath.collectAsState()
+    val lastRecordedAudioPath by vm.voiceController.lastRecordedAudioPath.collectAsState()
 
     val currentVocab = allVocab.find { it.id == currentVocabId } ?: allVocab.first()
     var userAttemptText by rememberSaveable(currentVocab.id, selectedMode) { mutableStateOf("") }
+
+    LaunchedEffect(lastResult) {
+        val recognized = lastResult?.recognizedSpeech.orEmpty()
+        if (recognized.isNotBlank() && userAttemptText.isBlank()) {
+            userAttemptText = recognized
+        }
+    }
 
     // Automatically request a dynamic AI challenge when vocab or mode changes
     LaunchedEffect(currentVocab.id, selectedMode) {
@@ -1455,6 +1487,26 @@ private fun SrsActiveTrainerTab(
                             }
                         }
                     }
+
+                    if (!isRecording && !lastRecordedAudioPath.isNullOrBlank() && File(lastRecordedAudioPath!!).exists()) {
+                        val isPlayingLast = playingAudioPath == lastRecordedAudioPath
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { vm.voiceController.playRecordedFile(lastRecordedAudioPath!!) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                if (isPlayingLast) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (isPlayingLast) "Остановить воспроизведение" else "🎙 Прослушать свою последнюю запись",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1462,6 +1514,9 @@ private fun SrsActiveTrainerTab(
         // Result card
         if (lastResult != null) {
             val res = lastResult!!
+            val audioPath = res.audioFilePath ?: lastRecordedAudioPath
+            val hasAudio = !audioPath.isNullOrBlank() && File(audioPath).exists()
+            val isPlayingResAudio = hasAudio && playingAudioPath == audioPath
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -1473,12 +1528,55 @@ private fun SrsActiveTrainerTab(
                         }
                     )
                 ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = if (res.passed) "✅ Отлично усвоено! (${res.score}/100)" else "⚠️ Попробуйте еще раз (${res.score}/100)",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
+                        if (res.recognizedSpeech.isNotBlank()) {
+                            Text(
+                                text = "Ваш ответ: \"${res.recognizedSpeech}\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (hasAudio && audioPath != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { vm.voiceController.playRecordedFile(audioPath) },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        if (isPlayingResAudio) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        if (isPlayingResAudio) "Стоп запись" else "🎙 Мой голос",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { vm.speakText(res.nativePolishedVersion) },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.VolumeUp,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("🇬🇧 Эталон", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
                         Text(
                             text = res.feedbackRu,
                             style = MaterialTheme.typography.bodySmall

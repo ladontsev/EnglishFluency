@@ -104,5 +104,6 @@ data class SrsEvaluationResult(
     val usedTargetExpression: Boolean,
     val feedbackRu: String,
     val nativePolishedVersion: String,
-    val pronunciationTip: String
+    val pronunciationTip: String,
+    val audioFilePath: String? = null
 )
