@@ -154,6 +154,69 @@ class GeminiTutorService(
     }
 
     /**
+     * Dynamically generates a realistic, fun roleplay scenario based on the lesson's topic and target idioms.
+     */
+    suspend fun generateRoleplayScenario(
+        apiKey: String,
+        modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
+        lesson: Lesson
+    ): RoleplayScenario = withContext(Dispatchers.IO) {
+        val key = requireApiKey(apiKey)
+        val idiomsList = lesson.vocabulary.joinToString(", ") { "\"${it.expression}\"" }
+        val prompt = """
+            You are creating an interactive British English conversational roleplay simulation based on this lesson:
+            Title: "${lesson.title}"
+            Topic summary: ${lesson.topicSummary}
+            Available vocabulary: $idiomsList
+            
+            Design a realistic, engaging everyday or workplace scenario (e.g., job interview, friendly debate at a London pub, team standup, negotiating with a colleague, dinner party) where the student and the AI character talk back and forth.
+            Select 3-5 of the best target expressions from the lesson that naturally fit this scenario as the student's secret mission checklist.
+            
+            Return ONLY valid JSON matching this exact structure:
+            {
+              "title": "Short creative title of the roleplay (e.g., London Cafe Debate: The Future of Remote Work)",
+              "aiCharacterName": "Oliver (BBC Colleague)",
+              "aiCharacterRole": "A slightly skeptical but friendly British colleague discussing the topic",
+              "userRole": "Your Role: Senior developer pitching your viewpoint",
+              "situationRu": "Описание ситуации и контекста на русском языке в 2 предложениях",
+              "missionGoalRu": "Ваша цель в диалоге на русском: убедить собеседника и ненавязчиво ввернуть выражения из чек-листа",
+              "initialAiLine": "Oliver's opening conversational line in English to start the dialogue immediately, setting up the scene and asking the student a direct question",
+              "checklistExpressions": ["exact expression 1", "exact expression 2", "exact expression 3"]
+            }
+        """.trimIndent()
+
+        val rawJson = callGeminiGenerateContent(key, modelId, prompt, audioFile = null)
+        val parsed = json.decodeFromString<GeneratedRoleplaySchema>(cleanJsonFence(rawJson))
+        val scenarioId = "rp_${UUID.randomUUID().toString().take(8)}"
+        RoleplayScenario(
+            id = scenarioId,
+            lessonId = lesson.id,
+            title = parsed.title,
+            aiCharacterName = parsed.aiCharacterName,
+            aiCharacterRole = parsed.aiCharacterRole,
+            userRole = parsed.userRole,
+            situationRu = parsed.situationRu,
+            missionGoalRu = parsed.missionGoalRu,
+            initialAiLine = parsed.initialAiLine,
+            checklistExpressions = parsed.checklistExpressions.ifEmpty {
+                lesson.vocabulary.take(4).map { it.expression }
+            }
+        )
+    }
+
+    @Serializable
+    private data class GeneratedRoleplaySchema(
+        val title: String,
+        val aiCharacterName: String,
+        val aiCharacterRole: String,
+        val userRole: String,
+        val situationRu: String,
+        val missionGoalRu: String,
+        val initialAiLine: String,
+        val checklistExpressions: List<String> = emptyList()
+    )
+
+    /**
      * Processes a user's Push-to-Talk turn (raw audio file + optional STT hint) strictly via Gemini API.
      */
     suspend fun evaluateConversationTurn(
@@ -162,37 +225,61 @@ class GeminiTutorService(
         lesson: Lesson,
         history: List<ChatMessage>,
         userSpeechText: String,
-        audioFile: File?
+        audioFile: File?,
+        roleplayScenario: RoleplayScenario? = null
     ): TutorTurnResponse = withContext(Dispatchers.IO) {
         val key = requireApiKey(apiKey)
 
-        val vocabListPrompt = lesson.vocabulary.joinToString("\n") {
-            "- \"${it.expression}\" (${it.definitionEn} / ${it.translationRu}) | Synonyms: ${it.synonyms.joinToString(", ")}"
+        val vocabListPrompt = if (roleplayScenario != null) {
+            "SECRET CHECKLIST IDIOMS TO ENCOURAGE AND TRACK:\n" +
+                roleplayScenario.checklistExpressions.joinToString("\n") { "- \"$it\"" }
+        } else {
+            lesson.vocabulary.joinToString("\n") {
+                "- \"${it.expression}\" (${it.definitionEn} / ${it.translationRu}) | Synonyms: ${it.synonyms.joinToString(", ")}"
+            }
+        }
+
+        val roleplayInstructions = if (roleplayScenario != null) {
+            """
+            ROLEPLAY MODE ACTIVATED:
+            - You are playing the character: ${roleplayScenario.aiCharacterName} (${roleplayScenario.aiCharacterRole}).
+            - The student is playing: ${roleplayScenario.userRole}.
+            - Scenario & Context: ${roleplayScenario.situationRu}
+            - Student's Mission Goal: ${roleplayScenario.missionGoalRu}
+            - In your reply ("tutorReplyEn"), STAY FULLY IN CHARACTER as ${roleplayScenario.aiCharacterName}! React realistically to what the student said, keep the conversation moving forward, debate or cooperate according to your role, and ask a follow-up question to keep the roleplay lively.
+            """.trimIndent()
+        } else {
+            "STANDARD TUTOR COACHING MODE: Engage the student warmly in discussing the lesson topic."
         }
 
         val historyTranscript = history.takeLast(10).joinToString("\n") { msg ->
-            val role = if (msg.sender == MessageSender.TUTOR) "TUTOR" else "STUDENT"
+            val role = if (msg.sender == MessageSender.TUTOR) {
+                roleplayScenario?.aiCharacterName ?: "TUTOR"
+            } else {
+                "STUDENT"
+            }
             "$role: ${msg.text}"
         }
 
         val systemInstruction = """
-            You are an expert British English conversational coach leading a 1-on-1 discussion based on a BBC Learning English (6 Minute English) episode.
+            You are an expert British English conversational coach and actor leading a simulation based on a BBC Learning English (6 Minute English) episode.
             
             LESSON TITLE: ${lesson.title}
             TOPIC SUMMARY: ${lesson.topicSummary}
-            TARGET VOCABULARY FROM THIS LESSON:
+            $roleplayInstructions
+            
+            TARGET VOCABULARY / CHECKLIST:
             $vocabListPrompt
             
             YOUR GOALS:
-            1. Engage the student in a natural, friendly conversation about the lesson topic.
-            2. Actively encourage them to use the Target Vocabulary expressions in their answers.
-            3. Evaluate every student turn across 4 dimensions:
-               - Target vocabulary usage (which target expressions from the list they used, or which specific expression from the lesson fits their thought right now).
+            1. In "tutorReplyEn", give a natural, authentic response in character (2-3 sentences max) advancing the conversation.
+            2. Evaluate every student turn across 4 dimensions:
+               - Target vocabulary usage (which target/checklist expressions they used, or which specific expression from the checklist fits their thought right now).
                - Grammar & accuracy (concise explanation in Russian + corrected English sentence).
                - Native phrasing / idioms (how an educated native speaker would naturally phrase the student's exact idea).
                - Pronunciation & intonation (listen carefully to the attached audio if present, or analyze phonetic challenges of the words they used: word stress, linking, weak forms, rising/falling intonation, in Russian, plus word-by-word IPA breakdown).
-            4. If the student made a notable mistake or missed a great opportunity to use a target phrase, set "repeatPrompt" to a short natural sentence containing that target phrase and ask them in your reply to try saying it out loud, or ask the next engaging follow-up question on the lesson topic.
-            5. If the student made a grammar/collocation mistake, Russian calque, or awkward phrasing, populate "personalMistakeToLearn" with the natural English expression/construction they should practice in Spaced Repetition (SRS); otherwise set "personalMistakeToLearn" to null.
+            3. If the student made a notable mistake or missed a great opportunity to use a target phrase, set "repeatPrompt" to a short natural sentence containing that target phrase and ask them in your reply to try saying it out loud, or ask the next engaging follow-up question.
+            4. If the student made a grammar/collocation mistake, Russian calque, or awkward phrasing, populate "personalMistakeToLearn" with the natural English expression/construction they should practice in Spaced Repetition (SRS); otherwise set "personalMistakeToLearn" to null.
             
             Return ONLY valid JSON matching this exact structure:
             {

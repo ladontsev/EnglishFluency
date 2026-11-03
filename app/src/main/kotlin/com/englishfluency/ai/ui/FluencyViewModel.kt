@@ -14,6 +14,7 @@ import com.englishfluency.ai.data.GitHubReleaseInfo
 import com.englishfluency.ai.data.GitHubUpdater
 import com.englishfluency.ai.data.Lesson
 import com.englishfluency.ai.data.MessageSender
+import com.englishfluency.ai.data.RoleplayScenario
 import com.englishfluency.ai.data.SrsChallenge
 import com.englishfluency.ai.data.SrsEvaluationResult
 import com.englishfluency.ai.data.SrsExerciseMode
@@ -72,6 +73,15 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     private val _conversationError = MutableStateFlow<String?>(null)
     val conversationError: StateFlow<String?> = _conversationError.asStateFlow()
+
+    // Stage 3 (v2.0): Interactive Roleplay Simulation
+    val roleplaysByLesson: StateFlow<Map<String, RoleplayScenario>> = repository.roleplaysByLesson
+
+    private val _isGeneratingRoleplay = MutableStateFlow(false)
+    val isGeneratingRoleplay: StateFlow<Boolean> = _isGeneratingRoleplay.asStateFlow()
+
+    private val _roleplayError = MutableStateFlow<String?>(null)
+    val roleplayError: StateFlow<String?> = _roleplayError.asStateFlow()
 
     // SRS Review State (100% Dynamic via Gemini + Stage 2 Personal Mistakes & 5-Min Sprint)
     private val _selectedSrsMode = MutableStateFlow(SrsExerciseMode.RU_TO_EN)
@@ -300,11 +310,51 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
         _urlImportStatus.value = null
     }
 
+    fun startOrGenerateRoleplay() {
+        val lesson = getSelectedLesson() ?: return
+        if (apiKey.value.isBlank()) {
+            _roleplayError.value = "Укажите Gemini API Key в Настройках для запуска Roleplay."
+            return
+        }
+        viewModelScope.launch {
+            _isGeneratingRoleplay.value = true
+            _roleplayError.value = null
+            runCatching {
+                geminiService.generateRoleplayScenario(
+                    apiKey = apiKey.value,
+                    modelId = geminiModelId.value,
+                    lesson = lesson
+                )
+            }.fold(
+                onSuccess = { scenario ->
+                    repository.setRoleplayForLesson(lesson.id, scenario)
+                    // Reset conversation with the character's initial greeting
+                    val characterOpening = "${scenario.initialAiLine}\n\n[Ролевая игра: ${scenario.title}. Ваша роль: ${scenario.userRole}]"
+                    repository.resetConversation(lesson.id, characterOpening)
+                    _isGeneratingRoleplay.value = false
+                    voiceController.speakTutorText(scenario.initialAiLine)
+                },
+                onFailure = { err ->
+                    _isGeneratingRoleplay.value = false
+                    _roleplayError.value = "Ошибка генерации Roleplay: ${err.localizedMessage}"
+                }
+            )
+        }
+    }
+
+    fun exitRoleplay() {
+        val lesson = getSelectedLesson() ?: return
+        repository.setRoleplayForLesson(lesson.id, null)
+        resetCurrentConversation()
+    }
+
     fun submitUserTurn(spokenOrTypedText: String, audioFile: File? = null) {
         val lesson = getSelectedLesson() ?: return
         val history = repository.getConversationForLesson(lesson.id)
         val cleanText = spokenOrTypedText.trim()
         if (cleanText.isBlank() && (audioFile == null || !audioFile.exists())) return
+
+        val activeRoleplay = repository.getRoleplayForLesson(lesson.id)
 
         viewModelScope.launch {
             _isProcessingTurn.value = true
@@ -316,7 +366,8 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
                     lesson = lesson,
                     history = history,
                     userSpeechText = cleanText,
-                    audioFile = audioFile
+                    audioFile = audioFile,
+                    roleplayScenario = activeRoleplay
                 )
             }.fold(
                 onSuccess = { response ->

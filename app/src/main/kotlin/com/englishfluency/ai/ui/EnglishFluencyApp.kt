@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.TheaterComedy
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Badge
@@ -617,13 +618,30 @@ private fun LessonsHubTab(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { onStartPractice(lesson) },
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Начать голосовой разбор (Push-to-Talk)")
+                        Button(
+                            onClick = { onStartPractice(lesson) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Диалог")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                vm.selectLesson(lesson.id)
+                                vm.startOrGenerateRoleplay()
+                                onStartPractice(lesson)
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.TheaterComedy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("🎭 Roleplay")
+                        }
                     }
                 }
             }
@@ -675,6 +693,10 @@ private fun PushToTalkCoachTab(
     val speechRate by vm.voiceController.speechRate.collectAsState()
     val isProcessingTurn by vm.isProcessingTurn.collectAsState()
     val conversationError by vm.conversationError.collectAsState()
+    val roleplaysByLesson by vm.roleplaysByLesson.collectAsState()
+    val isGeneratingRoleplay by vm.isGeneratingRoleplay.collectAsState()
+    val roleplayError by vm.roleplayError.collectAsState()
+    val activeRoleplay = roleplaysByLesson[lesson.id]
 
     var showShadowingPanel by rememberSaveable { mutableStateOf(false) }
     var showVocabAccordion by rememberSaveable { mutableStateOf(false) }
@@ -750,6 +772,36 @@ private fun PushToTalkCoachTab(
                     }
                     AssistChip(
                         onClick = {
+                            if (activeRoleplay == null) {
+                                vm.startOrGenerateRoleplay()
+                            } else {
+                                vm.exitRoleplay()
+                            }
+                        },
+                        label = {
+                            Text(
+                                if (isGeneratingRoleplay) "Создание..." else if (activeRoleplay != null) "Выйти из Roleplay" else "🎭 Roleplay",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        leadingIcon = {
+                            if (isGeneratingRoleplay) {
+                                CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(
+                                    Icons.Default.TheaterComedy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = if (activeRoleplay != null) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface
+                        )
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    AssistChip(
+                        onClick = {
                             showShadowingPanel = !showShadowingPanel
                             if (showShadowingPanel) showVocabAccordion = false
                         },
@@ -778,6 +830,90 @@ private fun PushToTalkCoachTab(
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                }
+
+                if (activeRoleplay != null) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🎭 ${activeRoleplay.title}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Text(
+                                    text = "Собеседник: ${activeRoleplay.aiCharacterName}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                            Text(
+                                text = "${activeRoleplay.situationRu} • ${activeRoleplay.userRole}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "🎯 Цель миссии: ${activeRoleplay.missionGoalRu}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Чек-лист выражений (используйте в диалоге):",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                activeRoleplay.checklistExpressions.forEach { expr ->
+                                    val used = lesson.vocabulary.find { it.expression.equals(expr, ignoreCase = true) }?.timesUsedInConversation ?: 0 > 0
+                                    AssistChip(
+                                        onClick = { vm.speakText(expr) },
+                                        leadingIcon = if (used) {
+                                            {
+                                                Icon(
+                                                    Icons.Default.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        } else null,
+                                        label = {
+                                            Text(
+                                                text = expr,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (used) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (used) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (roleplayError != null) {
+                    Text(
+                        text = roleplayError!!,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
                 }
 
                 // Default state: compact 1-line horizontal LazyRow carousel

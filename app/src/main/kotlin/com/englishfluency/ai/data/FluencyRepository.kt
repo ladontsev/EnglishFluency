@@ -17,7 +17,8 @@ private data class PersistedAppState(
     val availableModels: List<GeminiModelInfo> = emptyList(),
     val lessons: List<Lesson> = emptyList(),
     val conversationsByLesson: Map<String, List<ChatMessage>> = emptyMap(),
-    val srsChallengesCache: Map<String, SrsChallenge> = emptyMap()
+    val srsChallengesCache: Map<String, SrsChallenge> = emptyMap(),
+    val roleplaysByLesson: Map<String, RoleplayScenario> = emptyMap()
 )
 
 class FluencyRepository(context: Context) {
@@ -54,6 +55,9 @@ class FluencyRepository(context: Context) {
     private val _srsChallengesCache = MutableStateFlow<Map<String, SrsChallenge>>(emptyMap())
     val srsChallengesCache: StateFlow<Map<String, SrsChallenge>> = _srsChallengesCache.asStateFlow()
 
+    private val _roleplaysByLesson = MutableStateFlow<Map<String, RoleplayScenario>>(emptyMap())
+    val roleplaysByLesson: StateFlow<Map<String, RoleplayScenario>> = _roleplaysByLesson.asStateFlow()
+
     init {
         loadFromDisk()
     }
@@ -86,6 +90,7 @@ class FluencyRepository(context: Context) {
             _lessons.value = loaded.lessons
             _conversations.value = loaded.conversationsByLesson
             _srsChallengesCache.value = loaded.srsChallengesCache
+            _roleplaysByLesson.value = loaded.roleplaysByLesson
             saveToDisk()
         }
     }
@@ -98,7 +103,8 @@ class FluencyRepository(context: Context) {
                 availableModels = _availableModels.value,
                 lessons = _lessons.value,
                 conversationsByLesson = _conversations.value,
-                srsChallengesCache = _srsChallengesCache.value
+                srsChallengesCache = _srsChallengesCache.value,
+                roleplaysByLesson = _roleplaysByLesson.value
             )
             storageFile.writeText(json.encodeToString(state))
         }
@@ -117,6 +123,19 @@ class FluencyRepository(context: Context) {
     fun updateAvailableModels(models: List<GeminiModelInfo>) {
         _availableModels.value = models
         saveToDisk()
+    }
+
+    fun setRoleplayForLesson(lessonId: String, scenario: RoleplayScenario?) {
+        _roleplaysByLesson.value = if (scenario == null) {
+            _roleplaysByLesson.value - lessonId
+        } else {
+            _roleplaysByLesson.value + (lessonId to scenario)
+        }
+        saveToDisk()
+    }
+
+    fun getRoleplayForLesson(lessonId: String): RoleplayScenario? {
+        return _roleplaysByLesson.value[lessonId]
     }
 
     fun addOrReplaceLesson(lesson: Lesson, openingMessage: String? = null) {

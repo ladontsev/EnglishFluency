@@ -123,6 +123,20 @@ enum class SrsFilterCategory(val labelRu: String) {
 }
 
 @Serializable
+data class RoleplayScenario(
+    val id: String,
+    val lessonId: String,
+    val title: String,
+    val aiCharacterName: String,
+    val aiCharacterRole: String,
+    val userRole: String,
+    val situationRu: String,
+    val missionGoalRu: String,
+    val initialAiLine: String,
+    val checklistExpressions: List<String>
+)
+
+@Serializable
 data class SrsChallenge(
     val vocabId: String,
     val modeName: String,
