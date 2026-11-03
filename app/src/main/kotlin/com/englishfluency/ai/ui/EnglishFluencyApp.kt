@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Mic
@@ -69,6 +70,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -118,7 +120,7 @@ fun EnglishFluencyApp(vm: FluencyViewModel = viewModel()) {
                             text = when (selectedTab) {
                                 0 -> "BBC Learning English • Уроки"
                                 1 -> currentLesson?.title ?: "Push-to-Talk Практика"
-                                2 -> "SRS Тренажер (RU↔EN / Синонимы)"
+                                2 -> "SRS Тренажер (Динамический ИИ)"
                                 else -> "Настройки ИИ и Прогресс"
                             },
                             style = MaterialTheme.typography.titleMedium,
@@ -128,9 +130,9 @@ fun EnglishFluencyApp(vm: FluencyViewModel = viewModel()) {
                         )
                         Text(
                             text = when (selectedTab) {
-                                0 -> "Импорт по ссылке и целевая лексика"
+                                0 -> "Динамическое извлечение уроков и словаря через ИИ"
                                 1 -> "Голосовой диалог + Shadowing + разбор произношения"
-                                2 -> "Активное интервальное повторение выражений вслух"
+                                2 -> "Генерация живых заданий RU↔EN и EN↔EN через Gemini"
                                 else -> "Gemini 3 Multimodal API & Обновления"
                             },
                             style = MaterialTheme.typography.labelSmall,
@@ -196,10 +198,17 @@ fun EnglishFluencyApp(vm: FluencyViewModel = viewModel()) {
                     onOpenSrsForVocab = { vocab ->
                         vm.selectSrsVocab(vocab.id)
                         selectedTab = 2
-                    }
+                    },
+                    onOpenSettings = { selectedTab = 3 }
                 )
-                1 -> PushToTalkCoachTab(vm = vm)
-                2 -> SrsActiveTrainerTab(vm = vm)
+                1 -> PushToTalkCoachTab(
+                    vm = vm,
+                    onGoToLessons = { selectedTab = 0 }
+                )
+                2 -> SrsActiveTrainerTab(
+                    vm = vm,
+                    onGoToLessons = { selectedTab = 0 }
+                )
                 3 -> SettingsAndStatsTab(vm = vm)
             }
         }
@@ -211,9 +220,11 @@ fun EnglishFluencyApp(vm: FluencyViewModel = viewModel()) {
 private fun LessonsHubTab(
     vm: FluencyViewModel,
     onStartPractice: (Lesson) -> Unit,
-    onOpenSrsForVocab: (VocabularyItem) -> Unit
+    onOpenSrsForVocab: (VocabularyItem) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val lessons by vm.lessons.collectAsState()
+    val apiKey by vm.apiKey.collectAsState()
     val isLoadingUrl by vm.isLoadingUrl.collectAsState()
     val urlStatus by vm.urlImportStatus.collectAsState()
     var bbcUrlInput by rememberSaveable {
@@ -225,6 +236,36 @@ private fun LessonsHubTab(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (apiKey.isBlank()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "🔑 Требуется ключ Gemini API",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Все уроки, словарь, синонимы и упражнения генерируются динамически через ИИ без статичных шаблонов. Добавьте ваш ключ во вкладке «Настройки».",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(onClick = onOpenSettings) {
+                            Text("Перейти в Настройки")
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -248,7 +289,7 @@ private fun LessonsHubTab(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Вставьте ссылку на любой выпуск BBC Learning English: приложение скачает транскрипт, выделит ключевые идиомы, синонимы и вопросы для устной беседы.",
+                        text = "Вставьте ссылку на любой выпуск BBC Learning English: приложение скачает страницу, а ИИ динамически извлечет из неё словарь, переводы, синонимы, реплики для Shadowing и вопросы для беседы.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -270,19 +311,23 @@ private fun LessonsHubTab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isLoadingUrl) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Разбор страницы...", style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    text = urlStatus ?: "Разбор страницы через ИИ...",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
                             }
                         } else {
                             Text(
-                                text = urlStatus ?: "Готово к загрузке",
+                                text = urlStatus ?: "Вставьте ссылку и нажмите «Загрузить»",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.weight(1f)
                             )
                         }
+                        Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
                                 vm.importBbcLessonFromUrl(bbcUrlInput) { imported ->
@@ -291,8 +336,31 @@ private fun LessonsHubTab(
                             },
                             enabled = !isLoadingUrl && bbcUrlInput.isNotBlank()
                         ) {
-                            Text("Загрузить и начать")
+                            Text("Загрузить урок")
                         }
+                    }
+                }
+            }
+        }
+
+        if (lessons.isEmpty()) {
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Список уроков пока пуст",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Нажмите «Загрузить урок» выше, чтобы ИИ разобрал выпуск по ссылке и создал живой разговорный урок.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -319,6 +387,16 @@ private fun LessonsHubTab(
                                 text = lesson.title,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
+                            )
+                        }
+                        IconButton(
+                            onClick = { vm.deleteLesson(lesson.id) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.DeleteOutline,
+                                contentDescription = "Удалить урок",
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -374,11 +452,38 @@ private fun LessonsHubTab(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PushToTalkCoachTab(vm: FluencyViewModel) {
+private fun PushToTalkCoachTab(
+    vm: FluencyViewModel,
+    onGoToLessons: () -> Unit
+) {
     val context = LocalContext.current
     val lessons by vm.lessons.collectAsState()
     val selectedLessonId by vm.selectedLessonId.collectAsState()
-    val lesson = lessons.find { it.id == selectedLessonId } ?: lessons.firstOrNull() ?: return
+    val lesson = lessons.find { it.id == selectedLessonId } ?: lessons.firstOrNull()
+
+    if (lesson == null) {
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Нет загруженных уроков",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Сначала импортируйте любой выпуск BBC Learning English по ссылке на вкладке «Уроки BBC».",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onGoToLessons) {
+                    Text("Перейти к загрузке урока")
+                }
+            }
+        }
+        return
+    }
+
     val conversations by vm.repository.conversations.collectAsState()
     val messages = conversations[lesson.id] ?: vm.repository.getConversationForLesson(lesson.id)
 
@@ -387,6 +492,7 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
     val playingAudioPath by vm.voiceController.playingAudioPath.collectAsState()
     val speechRate by vm.voiceController.speechRate.collectAsState()
     val isProcessingTurn by vm.isProcessingTurn.collectAsState()
+    val conversationError by vm.conversationError.collectAsState()
 
     var showShadowingPanel by rememberSaveable { mutableStateOf(false) }
     var draftInput by rememberSaveable { mutableStateOf("") }
@@ -451,7 +557,7 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
                     ) {
                         Icon(
                             Icons.Default.Refresh,
-                            contentDescription = "Сбросить диалог",
+                            contentDescription = "Новый диалог с ИИ",
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -522,11 +628,11 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
                                 }
                             }
                             Text(
-                                text = "Нажмите на реплику диктора, чтобы прослушать в выбранном темпе и повторить с той же интонацией:",
+                                text = "Нажмите на реплику из урока, чтобы прослушать в выбранном темпе и повторить:",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            transcriptLines.forEach { line ->
+                            transcriptLines.take(8).forEach { line ->
                                 val spokenPart = line.substringAfter(":", line).trim()
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
@@ -605,10 +711,27 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(10.dp))
                             Text(
-                                "ИИ-тьютор анализирует ваш ответ (грамматика, нейтив-фразы, произношение, интонация)...",
+                                "Gemini анализирует ваш ответ (аудио, грамматику, нейтив-фразы, произношение, интонацию)...",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                    }
+                }
+            }
+
+            if (conversationError != null) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            text = conversationError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(12.dp)
+                        )
                     }
                 }
             }
@@ -792,8 +915,9 @@ private fun UserMessageWithAnalysisCard(
     onPracticeRepeatPrompt: (String) -> Unit
 ) {
     var selectedWordItem by remember { mutableStateOf<WordPronunciationItem?>(null) }
-    val hasRecordedAudio = !message.audioFilePath.isNullOrBlank() && File(message.audioFilePath).exists()
-    val isPlayingThisAudio = hasRecordedAudio && playingAudioPath == message.audioFilePath
+    val audioPath = message.audioFilePath
+    val hasRecordedAudio = !audioPath.isNullOrBlank() && File(audioPath).exists()
+    val isPlayingThisAudio = hasRecordedAudio && playingAudioPath == audioPath
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -823,9 +947,9 @@ private fun UserMessageWithAnalysisCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (hasRecordedAudio) {
+                    if (hasRecordedAudio && audioPath != null) {
                         OutlinedButton(
-                            onClick = { onPlayRecordedFile(message.audioFilePath!!) },
+                            onClick = { onPlayRecordedFile(audioPath) },
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
@@ -1064,20 +1188,55 @@ private fun UserMessageWithAnalysisCard(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
+private fun SrsActiveTrainerTab(
+    vm: FluencyViewModel,
+    onGoToLessons: () -> Unit
+) {
     val context = LocalContext.current
     val lessons by vm.lessons.collectAsState()
     val allVocab = lessons.flatMap { it.vocabulary }
+
+    if (allVocab.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "В тренажере пока нет выражений",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Загрузите любой урок BBC Learning English по ссылке на вкладке «Уроки BBC», и ИИ автоматически извлечет из него выражения для тренировки.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onGoToLessons) {
+                    Text("Загрузить урок по ссылке")
+                }
+            }
+        }
+        return
+    }
+
     val currentVocabId by vm.currentSrsVocabId.collectAsState()
     val selectedMode by vm.selectedSrsMode.collectAsState()
+    val currentChallenge by vm.currentSrsChallenge.collectAsState()
+    val isGeneratingChallenge by vm.isGeneratingChallenge.collectAsState()
+    val srsError by vm.srsError.collectAsState()
     val lastResult by vm.lastSrsResult.collectAsState()
     val isEvaluating by vm.isEvaluatingSrs.collectAsState()
 
     val isRecording by vm.voiceController.isRecording.collectAsState()
     val livePartial by vm.voiceController.livePartialTranscript.collectAsState()
 
-    val currentVocab = allVocab.find { it.id == currentVocabId } ?: allVocab.firstOrNull() ?: return
+    val currentVocab = allVocab.find { it.id == currentVocabId } ?: allVocab.first()
     var userAttemptText by rememberSaveable(currentVocab.id, selectedMode) { mutableStateOf("") }
+
+    // Automatically request a dynamic AI challenge when vocab or mode changes
+    LaunchedEffect(currentVocab.id, selectedMode) {
+        vm.ensureSrsChallengeLoaded(currentVocab, forceNew = false)
+    }
 
     var hasMicPermission by remember {
         mutableStateOf(
@@ -1125,7 +1284,7 @@ private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
             }
         }
 
-        // Flashcard & Active Generation Challenge
+        // Flashcard & 100% Dynamic AI Generation Challenge
         item {
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -1137,7 +1296,7 @@ private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Уровень освоения: ${currentVocab.masteryLevel}/5 • Интервал: ${currentVocab.intervalDays} дн.",
                                 style = MaterialTheme.typography.labelSmall,
@@ -1177,17 +1336,68 @@ private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
 
-                    Text(
-                        text = "Задание (${selectedMode.subtitleRu}):",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = vm.buildPromptForSrsItem(currentVocab, selectedMode),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Задание от ИИ (${selectedMode.titleRu}):",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        AssistChip(
+                            onClick = {
+                                userAttemptText = ""
+                                vm.ensureSrsChallengeLoaded(currentVocab, forceNew = true)
+                            },
+                            enabled = !isGeneratingChallenge,
+                            label = { Text("Новое задание ИИ", style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                            }
+                        )
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    if (isGeneratingChallenge) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "Gemini генерирует новую живую фразу для «${currentVocab.expression}»...",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    } else if (currentChallenge != null) {
+                        Text(
+                            text = currentChallenge!!.promptText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (currentChallenge!!.hintText.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "💡 Подсказка: ${currentChallenge!!.hintText}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (srsError != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = srsError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
 
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
@@ -1238,7 +1448,11 @@ private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
                             },
                             enabled = !isEvaluating && userAttemptText.isNotBlank()
                         ) {
-                            Text("Проверить")
+                            if (isEvaluating) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("Проверить")
+                            }
                         }
                     }
                 }
@@ -1269,18 +1483,40 @@ private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
                             text = res.feedbackRu,
                             style = MaterialTheme.typography.bodySmall
                         )
-                        Text(
-                            text = "Эталонный вариант: \"${res.nativePolishedVersion}\"",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontStyle = FontStyle.Italic
-                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { vm.speakText(res.nativePolishedVersion) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🇬🇧 Эталонный вариант: \"${res.nativePolishedVersion}\"",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontStyle = FontStyle.Italic,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = "Прослушать",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                         Text(
                             text = "🎙 Произношение: ${res.pronunciationTip}",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(Modifier.height(6.dp))
                         Button(
-                            onClick = { vm.nextSrsVocab() },
+                            onClick = {
+                                userAttemptText = ""
+                                vm.nextSrsVocab()
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Следующее выражение →")
@@ -1293,7 +1529,7 @@ private fun SrsActiveTrainerTab(vm: FluencyViewModel) {
         // All saved expressions list
         item {
             Text(
-                text = "Все сохраненные выражения (${allVocab.size}):",
+                text = "Все выражения из ваших уроков (${allVocab.size}):",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )

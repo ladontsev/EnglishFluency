@@ -15,7 +15,8 @@ private data class PersistedAppState(
     val apiKey: String = "",
     val geminiModelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
     val lessons: List<Lesson> = emptyList(),
-    val conversationsByLesson: Map<String, List<ChatMessage>> = emptyMap()
+    val conversationsByLesson: Map<String, List<ChatMessage>> = emptyMap(),
+    val srsChallengesCache: Map<String, SrsChallenge> = emptyMap()
 )
 
 class FluencyRepository(context: Context) {
@@ -31,7 +32,9 @@ class FluencyRepository(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val storageFile = File(appContext.filesDir, "fluency_state_v1.json")
+    // Bumped to v2 so old hardcoded sample lessons are not loaded from legacy state
+    private val storageFile = File(appContext.filesDir, "fluency_state_v2.json")
+    private val legacyStorageFile = File(appContext.filesDir, "fluency_state_v1.json")
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
@@ -50,6 +53,9 @@ class FluencyRepository(context: Context) {
     private val _conversations = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
     val conversations: StateFlow<Map<String, List<ChatMessage>>> = _conversations.asStateFlow()
 
+    private val _srsChallengesCache = MutableStateFlow<Map<String, SrsChallenge>>(emptyMap())
+    val srsChallengesCache: StateFlow<Map<String, SrsChallenge>> = _srsChallengesCache.asStateFlow()
+
     init {
         loadFromDisk()
     }
@@ -58,23 +64,29 @@ class FluencyRepository(context: Context) {
         val loaded = runCatching {
             if (storageFile.exists()) {
                 json.decodeFromString<PersistedAppState>(storageFile.readText())
+            } else if (legacyStorageFile.exists()) {
+                // Preserve user's API key & model from v1, but drop static hardcoded lessons
+                val old = json.decodeFromString<PersistedAppState>(legacyStorageFile.readText())
+                val dynamicLessons = old.lessons.filter {
+                    it.id != "ep-261029" && it.id != "bbc-small-talk-work"
+                }
+                old.copy(
+                    lessons = dynamicLessons,
+                    conversationsByLesson = old.conversationsByLesson.filterKeys { k ->
+                        dynamicLessons.any { it.id == k }
+                    }
+                )
             } else {
                 null
             }
         }.getOrNull()
 
-        if (loaded != null && loaded.lessons.isNotEmpty()) {
+        if (loaded != null) {
             _apiKey.value = loaded.apiKey
             _geminiModelId.value = loaded.geminiModelId.ifBlank { DEFAULT_GEMINI_MODEL }
             _lessons.value = loaded.lessons
             _conversations.value = loaded.conversationsByLesson
-        } else {
-            val initialLessons = SampleBbcLessons.defaultLessons()
-            _lessons.value = initialLessons
-            val initialConvos = initialLessons.associate { lesson ->
-                lesson.id to listOf(buildWelcomeTutorMessage(lesson))
-            }
-            _conversations.value = initialConvos
+            _srsChallengesCache.value = loaded.srsChallengesCache
             saveToDisk()
         }
     }
@@ -85,7 +97,8 @@ class FluencyRepository(context: Context) {
                 apiKey = _apiKey.value,
                 geminiModelId = _geminiModelId.value,
                 lessons = _lessons.value,
-                conversationsByLesson = _conversations.value
+                conversationsByLesson = _conversations.value,
+                srsChallengesCache = _srsChallengesCache.value
             )
             storageFile.writeText(json.encodeToString(state))
         }
@@ -101,7 +114,7 @@ class FluencyRepository(context: Context) {
         saveToDisk()
     }
 
-    fun addOrReplaceLesson(lesson: Lesson) {
+    fun addOrReplaceLesson(lesson: Lesson, openingMessage: String? = null) {
         val current = _lessons.value.toMutableList()
         val existingIdx = current.indexOfFirst { it.id == lesson.id || it.sourceUrl == lesson.sourceUrl }
         if (existingIdx >= 0) {
@@ -111,9 +124,14 @@ class FluencyRepository(context: Context) {
         }
         _lessons.value = current
 
-        if (!_conversations.value.containsKey(lesson.id)) {
-            _conversations.value = _conversations.value + (lesson.id to listOf(buildWelcomeTutorMessage(lesson)))
-        }
+        val firstMsg = buildWelcomeTutorMessage(lesson, openingMessage)
+        _conversations.value = _conversations.value + (lesson.id to listOf(firstMsg))
+        saveToDisk()
+    }
+
+    fun deleteLesson(lessonId: String) {
+        _lessons.value = _lessons.value.filterNot { it.id == lessonId }
+        _conversations.value = _conversations.value - lessonId
         saveToDisk()
     }
 
@@ -121,7 +139,7 @@ class FluencyRepository(context: Context) {
         val existing = _conversations.value[lessonId]
         if (!existing.isNullOrEmpty()) return existing
         val lesson = _lessons.value.find { it.id == lessonId } ?: return emptyList()
-        val welcome = listOf(buildWelcomeTutorMessage(lesson))
+        val welcome = listOf(buildWelcomeTutorMessage(lesson, null))
         _conversations.value = _conversations.value + (lessonId to welcome)
         saveToDisk()
         return welcome
@@ -134,10 +152,20 @@ class FluencyRepository(context: Context) {
         saveToDisk()
     }
 
-    fun resetConversation(lessonId: String) {
+    fun resetConversation(lessonId: String, openingMessage: String? = null) {
         val lesson = _lessons.value.find { it.id == lessonId } ?: return
-        _conversations.value = _conversations.value + (lessonId to listOf(buildWelcomeTutorMessage(lesson)))
+        _conversations.value = _conversations.value + (lessonId to listOf(buildWelcomeTutorMessage(lesson, openingMessage)))
         saveToDisk()
+    }
+
+    fun cacheSrsChallenge(vocabId: String, mode: SrsExerciseMode, challenge: SrsChallenge) {
+        val key = "${vocabId}_${mode.name}"
+        _srsChallengesCache.value = _srsChallengesCache.value + (key to challenge)
+        saveToDisk()
+    }
+
+    fun getCachedSrsChallenge(vocabId: String, mode: SrsExerciseMode): SrsChallenge? {
+        return _srsChallengesCache.value["${vocabId}_${mode.name}"]
     }
 
     fun markVocabUsedInConversation(
@@ -220,14 +248,18 @@ class FluencyRepository(context: Context) {
         return _lessons.value.flatMap { it.vocabulary }
     }
 
-    private fun buildWelcomeTutorMessage(lesson: Lesson): ChatMessage {
-        val firstQuestion = lesson.discussionQuestions.firstOrNull()
-            ?: "What do you think about this topic?"
-        val targetHighlights = lesson.vocabulary.take(3).joinToString(", ") { "'${it.expression}'" }
+    private fun buildWelcomeTutorMessage(lesson: Lesson, customOpening: String?): ChatMessage {
+        val text = if (!customOpening.isNullOrBlank()) {
+            customOpening
+        } else {
+            val firstQuestion = lesson.discussionQuestions.firstOrNull().orEmpty()
+            val targetHighlights = lesson.vocabulary.take(3).joinToString(", ") { "'${it.expression}'" }
+            "Welcome! Today we're discussing \"${lesson.title}\". Try using expressions from this lesson like $targetHighlights. $firstQuestion"
+        }
         return ChatMessage(
             id = "welcome_${lesson.id}_${System.currentTimeMillis()}",
             sender = MessageSender.TUTOR,
-            text = "Welcome! Today we're discussing \"${lesson.title}\". As we chat, try using expressions from this lesson like $targetHighlights. Let's start: $firstQuestion",
+            text = text,
             timestampMs = System.currentTimeMillis()
         )
     }

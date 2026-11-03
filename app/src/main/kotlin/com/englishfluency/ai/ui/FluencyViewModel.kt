@@ -12,6 +12,7 @@ import com.englishfluency.ai.data.GitHubReleaseInfo
 import com.englishfluency.ai.data.GitHubUpdater
 import com.englishfluency.ai.data.Lesson
 import com.englishfluency.ai.data.MessageSender
+import com.englishfluency.ai.data.SrsChallenge
 import com.englishfluency.ai.data.SrsEvaluationResult
 import com.englishfluency.ai.data.SrsExerciseMode
 import com.englishfluency.ai.data.VocabularyItem
@@ -33,7 +34,7 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
     val geminiModelId: StateFlow<String> = repository.geminiModelId
 
     private val _selectedLessonId = MutableStateFlow(
-        repository.lessons.value.firstOrNull()?.id ?: "ep-261029"
+        repository.lessons.value.firstOrNull()?.id.orEmpty()
     )
     val selectedLessonId: StateFlow<String> = _selectedLessonId.asStateFlow()
 
@@ -46,12 +47,24 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
     private val _isProcessingTurn = MutableStateFlow(false)
     val isProcessingTurn: StateFlow<Boolean> = _isProcessingTurn.asStateFlow()
 
-    // SRS Review State
+    private val _conversationError = MutableStateFlow<String?>(null)
+    val conversationError: StateFlow<String?> = _conversationError.asStateFlow()
+
+    // SRS Review State (100% Dynamic via Gemini)
     private val _selectedSrsMode = MutableStateFlow(SrsExerciseMode.RU_TO_EN)
     val selectedSrsMode: StateFlow<SrsExerciseMode> = _selectedSrsMode.asStateFlow()
 
     private val _currentSrsVocabId = MutableStateFlow<String?>(null)
     val currentSrsVocabId: StateFlow<String?> = _currentSrsVocabId.asStateFlow()
+
+    private val _currentSrsChallenge = MutableStateFlow<SrsChallenge?>(null)
+    val currentSrsChallenge: StateFlow<SrsChallenge?> = _currentSrsChallenge.asStateFlow()
+
+    private val _isGeneratingChallenge = MutableStateFlow(false)
+    val isGeneratingChallenge: StateFlow<Boolean> = _isGeneratingChallenge.asStateFlow()
+
+    private val _srsError = MutableStateFlow<String?>(null)
+    val srsError: StateFlow<String?> = _srsError.asStateFlow()
 
     private val _lastSrsResult = MutableStateFlow<SrsEvaluationResult?>(null)
     val lastSrsResult: StateFlow<SrsEvaluationResult?> = _lastSrsResult.asStateFlow()
@@ -124,6 +137,14 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectLesson(lessonId: String) {
         _selectedLessonId.value = lessonId
+        _conversationError.value = null
+    }
+
+    fun deleteLesson(lessonId: String) {
+        repository.deleteLesson(lessonId)
+        if (_selectedLessonId.value == lessonId) {
+            _selectedLessonId.value = repository.lessons.value.firstOrNull()?.id.orEmpty()
+        }
     }
 
     fun getSelectedLesson(): Lesson? {
@@ -132,37 +153,43 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     fun importBbcLessonFromUrl(url: String, onSuccess: (Lesson) -> Unit) {
         if (url.isBlank()) return
+        if (apiKey.value.isBlank()) {
+            _urlImportStatus.value = "⚠️ Сначала укажите ваш Gemini API Key во вкладке «Настройки»!"
+            return
+        }
         viewModelScope.launch {
             _isLoadingUrl.value = true
-            _urlImportStatus.value = "Загрузка страницы BBC Learning English и извлечение словаря..."
+            _urlImportStatus.value = "Загрузка страницы BBC Learning English и ИИ-извлечение словаря..."
             val scrapedResult = BbcLessonParser.fetchRawPageContent(url.trim())
             scrapedResult.fold(
                 onSuccess = { scraped ->
-                    val lesson = geminiService.extractLessonFromScrapedPage(
-                        apiKey = apiKey.value,
-                        modelId = geminiModelId.value,
-                        scraped = scraped
-                    )
-                    repository.addOrReplaceLesson(lesson)
-                    _selectedLessonId.value = lesson.id
-                    _urlImportStatus.value = "Урок «${lesson.title}» успешно добавлен!"
-                    _isLoadingUrl.value = false
-                    onSuccess(lesson)
+                    runCatching {
+                        val lesson = geminiService.extractLessonFromScrapedPage(
+                            apiKey = apiKey.value,
+                            modelId = geminiModelId.value,
+                            scraped = scraped
+                        )
+                        val opening = runCatching {
+                            geminiService.generateOpeningQuestion(
+                                apiKey = apiKey.value,
+                                modelId = geminiModelId.value,
+                                lesson = lesson
+                            )
+                        }.getOrNull()
+
+                        repository.addOrReplaceLesson(lesson, opening)
+                        _selectedLessonId.value = lesson.id
+                        _urlImportStatus.value = "✅ Урок «${lesson.title}» (${lesson.vocabulary.size} выражений) загружен!"
+                        _isLoadingUrl.value = false
+                        onSuccess(lesson)
+                    }.onFailure { aiErr ->
+                        _urlImportStatus.value = "Ошибка Gemini API: ${aiErr.localizedMessage}"
+                        _isLoadingUrl.value = false
+                    }
                 },
                 onFailure = { err ->
-                    // Fallback if network is restricted or page format changed
-                    val fallback = BbcLessonParser.buildFallbackLessonFromScraped(
-                        BbcLessonParser.ScrapedBbcPage(
-                            url = url.trim(),
-                            title = "BBC 6 Minute English (${url.substringAfterLast('/')})",
-                            rawText = ""
-                        )
-                    )
-                    repository.addOrReplaceLesson(fallback)
-                    _selectedLessonId.value = fallback.id
-                    _urlImportStatus.value = "Создан шаблон урока по ссылке (${err.localizedMessage ?: "офлайн-режим"})"
+                    _urlImportStatus.value = "Ошибка загрузки страницы: ${err.localizedMessage}"
                     _isLoadingUrl.value = false
-                    onSuccess(fallback)
                 }
             )
         }
@@ -175,46 +202,54 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
     fun submitUserTurn(spokenOrTypedText: String, audioFile: File? = null) {
         val lesson = getSelectedLesson() ?: return
         val history = repository.getConversationForLesson(lesson.id)
-        val cleanText = spokenOrTypedText.trim().ifBlank {
-            "I think in the long run technology can be a blessing in disguise if we use it mindfully."
-        }
+        val cleanText = spokenOrTypedText.trim()
+        if (cleanText.isBlank() && (audioFile == null || !audioFile.exists())) return
 
         viewModelScope.launch {
             _isProcessingTurn.value = true
-            val response = geminiService.evaluateConversationTurn(
-                apiKey = apiKey.value,
-                modelId = geminiModelId.value,
-                lesson = lesson,
-                history = history,
-                userSpeechText = cleanText,
-                audioFile = audioFile
-            )
+            _conversationError.value = null
+            runCatching {
+                geminiService.evaluateConversationTurn(
+                    apiKey = apiKey.value,
+                    modelId = geminiModelId.value,
+                    lesson = lesson,
+                    history = history,
+                    userSpeechText = cleanText,
+                    audioFile = audioFile
+                )
+            }.fold(
+                onSuccess = { response ->
+                    val userMsg = ChatMessage(
+                        id = "usr_${UUID.randomUUID()}",
+                        sender = MessageSender.USER,
+                        text = response.analysis.userTranscript.ifBlank { cleanText },
+                        timestampMs = System.currentTimeMillis(),
+                        analysis = response.analysis,
+                        audioFilePath = audioFile?.absolutePath
+                    )
 
-            val userMsg = ChatMessage(
-                id = "usr_${UUID.randomUUID()}",
-                sender = MessageSender.USER,
-                text = response.analysis.userTranscript.ifBlank { cleanText },
-                timestampMs = System.currentTimeMillis(),
-                analysis = response.analysis,
-                audioFilePath = audioFile?.absolutePath
-            )
+                    val tutorMsg = ChatMessage(
+                        id = "tut_${UUID.randomUUID()}",
+                        sender = MessageSender.TUTOR,
+                        text = response.tutorReplyEn,
+                        timestampMs = System.currentTimeMillis() + 1
+                    )
 
-            val tutorMsg = ChatMessage(
-                id = "tut_${UUID.randomUUID()}",
-                sender = MessageSender.TUTOR,
-                text = response.tutorReplyEn,
-                timestampMs = System.currentTimeMillis() + 1
-            )
+                    repository.appendMessages(lesson.id, userMsg, tutorMsg)
+                    repository.markVocabUsedInConversation(
+                        lessonId = lesson.id,
+                        expressionsUsed = response.analysis.targetVocabUsed,
+                        pronunciationScore = response.analysis.pronunciationScore
+                    )
 
-            repository.appendMessages(lesson.id, userMsg, tutorMsg)
-            repository.markVocabUsedInConversation(
-                lessonId = lesson.id,
-                expressionsUsed = response.analysis.targetVocabUsed,
-                pronunciationScore = response.analysis.pronunciationScore
+                    _isProcessingTurn.value = false
+                    voiceController.speakTutorText(response.tutorReplyEn)
+                },
+                onFailure = { err ->
+                    _isProcessingTurn.value = false
+                    _conversationError.value = "Ошибка ИИ: ${err.localizedMessage}"
+                }
             )
-
-            _isProcessingTurn.value = false
-            voiceController.speakTutorText(response.tutorReplyEn)
         }
     }
 
@@ -224,18 +259,75 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
 
     fun resetCurrentConversation() {
         val lesson = getSelectedLesson() ?: return
-        repository.resetConversation(lesson.id)
+        viewModelScope.launch {
+            val opening = runCatching {
+                if (apiKey.value.isNotBlank()) {
+                    geminiService.generateOpeningQuestion(apiKey.value, geminiModelId.value, lesson)
+                } else null
+            }.getOrNull()
+            repository.resetConversation(lesson.id, opening)
+        }
     }
 
-    // SRS Methods
+    // Dynamic SRS Methods
+    fun ensureSrsChallengeLoaded(vocab: VocabularyItem, forceNew: Boolean = false) {
+        val mode = _selectedSrsMode.value
+        if (!forceNew) {
+            val cached = repository.getCachedSrsChallenge(vocab.id, mode)
+            if (cached != null) {
+                _currentSrsChallenge.value = cached
+                _srsError.value = null
+                return
+            }
+        }
+        if (apiKey.value.isBlank()) {
+            _srsError.value = "Укажите ваш Gemini API Key во вкладке «Настройки» для генерации заданий."
+            return
+        }
+
+        val lessonTitle = lessons.value.find { it.id == vocab.lessonId }?.title.orEmpty()
+        viewModelScope.launch {
+            _isGeneratingChallenge.value = true
+            _srsError.value = null
+            runCatching {
+                geminiService.generateSrsChallenge(
+                    apiKey = apiKey.value,
+                    modelId = geminiModelId.value,
+                    vocab = vocab,
+                    mode = mode,
+                    lessonTitle = lessonTitle
+                )
+            }.fold(
+                onSuccess = { challenge ->
+                    repository.cacheSrsChallenge(vocab.id, mode, challenge)
+                    _currentSrsChallenge.value = challenge
+                    _isGeneratingChallenge.value = false
+                },
+                onFailure = { err ->
+                    _srsError.value = "Ошибка генерации задания: ${err.localizedMessage}"
+                    _isGeneratingChallenge.value = false
+                }
+            )
+        }
+    }
+
     fun setSrsMode(mode: SrsExerciseMode) {
         _selectedSrsMode.value = mode
         _lastSrsResult.value = null
+        val all = repository.allVocabularyItems()
+        val current = all.find { it.id == _currentSrsVocabId.value } ?: all.firstOrNull()
+        if (current != null) {
+            ensureSrsChallengeLoaded(current, forceNew = false)
+        }
     }
 
     fun selectSrsVocab(vocabId: String) {
         _currentSrsVocabId.value = vocabId
         _lastSrsResult.value = null
+        val vocab = repository.allVocabularyItems().find { it.id == vocabId }
+        if (vocab != null) {
+            ensureSrsChallengeLoaded(vocab, forceNew = false)
+        }
     }
 
     fun nextSrsVocab() {
@@ -243,21 +335,10 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
         if (all.isEmpty()) return
         val currentIdx = all.indexOfFirst { it.id == _currentSrsVocabId.value }
         val nextIdx = if (currentIdx < 0 || currentIdx + 1 >= all.size) 0 else currentIdx + 1
-        _currentSrsVocabId.value = all[nextIdx].id
+        val nextItem = all[nextIdx]
+        _currentSrsVocabId.value = nextItem.id
         _lastSrsResult.value = null
-    }
-
-    fun buildPromptForSrsItem(vocab: VocabularyItem, mode: SrsExerciseMode): String {
-        return when (mode) {
-            SrsExerciseMode.RU_TO_EN ->
-                "Переведите на английский вслух, обязательно используя «${vocab.expression}»:\n\n«Сначала эта ситуация казалась сложной, но в итоге здесь есть скрытый смысл / ${vocab.translationRu}.»"
-            SrsExerciseMode.EN_TO_EN_PARAPHRASE -> {
-                val synonymToReplace = vocab.synonyms.firstOrNull() ?: vocab.definitionEn
-                "Перефразируйте предложение (EN → EN), заменив выделенную мысль («$synonymToReplace») на идиому из урока:\n\n\"Instead of saying '$synonymToReplace', how would you express this idea naturally using '${vocab.expression}'?\""
-            }
-            SrsExerciseMode.SITUATIONAL_QA ->
-                "Ответьте вслух (1–2 предложения) на вопрос, обязательно использовав выражение «${vocab.expression}»:\n\n\"Can you share a real example from your work or daily life where '${vocab.expression}' applies?\""
-        }
+        ensureSrsChallengeLoaded(nextItem, forceNew = true)
     }
 
     fun evaluateSrsResponse(
@@ -266,25 +347,35 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
         audioFile: File? = null
     ) {
         val mode = _selectedSrsMode.value
-        val prompt = buildPromptForSrsItem(vocab, mode)
+        val prompt = _currentSrsChallenge.value?.promptText ?: vocab.exampleSentence
         viewModelScope.launch {
             _isEvaluatingSrs.value = true
-            val result = geminiService.evaluateSrsAttempt(
-                apiKey = apiKey.value,
-                modelId = geminiModelId.value,
-                vocab = vocab,
-                mode = mode,
-                challengePrompt = prompt,
-                userSpokenText = spokenOrTypedText,
-                audioFile = audioFile
+            _srsError.value = null
+            runCatching {
+                geminiService.evaluateSrsAttempt(
+                    apiKey = apiKey.value,
+                    modelId = geminiModelId.value,
+                    vocab = vocab,
+                    mode = mode,
+                    challengePrompt = prompt,
+                    userSpokenText = spokenOrTypedText,
+                    audioFile = audioFile
+                )
+            }.fold(
+                onSuccess = { result ->
+                    repository.recordSrsReviewResult(
+                        vocabId = vocab.id,
+                        passed = result.passed,
+                        score = result.score
+                    )
+                    _lastSrsResult.value = result
+                    _isEvaluatingSrs.value = false
+                },
+                onFailure = { err ->
+                    _srsError.value = "Ошибка проверки ИИ: ${err.localizedMessage}"
+                    _isEvaluatingSrs.value = false
+                }
             )
-            repository.recordSrsReviewResult(
-                vocabId = vocab.id,
-                passed = result.passed,
-                score = result.score
-            )
-            _lastSrsResult.value = result
-            _isEvaluatingSrs.value = false
         }
     }
 

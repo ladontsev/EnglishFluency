@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -31,6 +30,7 @@ class GeminiTutorService(
     private data class ExtractedLessonSchema(
         val title: String,
         val topicSummary: String,
+        val transcriptExcerpt: String = "",
         val discussionQuestions: List<String>,
         val vocabulary: List<ExtractedVocabSchema>
     )
@@ -41,12 +41,51 @@ class GeminiTutorService(
         val definitionEn: String,
         val translationRu: String,
         val exampleSentence: String,
-        val synonyms: List<String>
+        val synonyms: List<String> = emptyList()
     )
 
+    @Serializable
+    private data class GeneratedSrsChallengeSchema(
+        val promptText: String,
+        val hintText: String = "",
+        val sampleIdealAnswer: String = ""
+    )
+
+    private fun requireApiKey(apiKey: String): String {
+        val clean = apiKey.trim()
+        if (clean.isBlank()) {
+            throw IllegalStateException("Укажите ваш Gemini API Key на вкладке «Настройки», чтобы ИИ мог работать.")
+        }
+        return clean
+    }
+
     /**
-     * Processes a user's Push-to-Talk turn (either raw audio file + optional STT transcript or text)
-     * in the context of a BBC Learning English lesson.
+     * Dynamically generates the opening welcome message & first question for a lesson via Gemini.
+     */
+    suspend fun generateOpeningQuestion(
+        apiKey: String,
+        modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
+        lesson: Lesson
+    ): String = withContext(Dispatchers.IO) {
+        val key = requireApiKey(apiKey)
+        val vocabList = lesson.vocabulary.joinToString(", ") { "\"${it.expression}\"" }
+        val prompt = """
+            You are a warm British English tutor starting a conversation about the BBC 6 Minute English lesson "${lesson.title}".
+            Topic summary: ${lesson.topicSummary}
+            Target vocabulary from this lesson: $vocabList
+            
+            Write a brief, natural opening greeting (2-3 sentences in English) inviting the student to discuss this topic and encouraging them to use 1-2 expressions from the target vocabulary list in their answer. End with an engaging open question.
+            Return ONLY valid JSON:
+            { "openingMessage": "Your greeting and first question in English" }
+        """.trimIndent()
+
+        val rawJson = callGeminiGenerateContent(key, modelId, prompt, audioFile = null)
+        val obj = json.parseToJsonElement(cleanJsonFence(rawJson)).jsonObject
+        obj["openingMessage"]?.jsonPrimitive?.content ?: lesson.discussionQuestions.firstOrNull().orEmpty()
+    }
+
+    /**
+     * Processes a user's Push-to-Talk turn (raw audio file + optional STT hint) strictly via Gemini API.
      */
     suspend fun evaluateConversationTurn(
         apiKey: String,
@@ -56,15 +95,13 @@ class GeminiTutorService(
         userSpeechText: String,
         audioFile: File?
     ): TutorTurnResponse = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) {
-            return@withContext buildSimulatedTutorResponse(lesson, history, userSpeechText)
-        }
+        val key = requireApiKey(apiKey)
 
         val vocabListPrompt = lesson.vocabulary.joinToString("\n") {
             "- \"${it.expression}\" (${it.definitionEn} / ${it.translationRu}) | Synonyms: ${it.synonyms.joinToString(", ")}"
         }
 
-        val historyTranscript = history.takeLast(8).joinToString("\n") { msg ->
+        val historyTranscript = history.takeLast(10).joinToString("\n") { msg ->
             val role = if (msg.sender == MessageSender.TUTOR) "TUTOR" else "STUDENT"
             "$role: ${msg.text}"
         }
@@ -81,11 +118,11 @@ class GeminiTutorService(
             1. Engage the student in a natural, friendly conversation about the lesson topic.
             2. Actively encourage them to use the Target Vocabulary expressions in their answers.
             3. Evaluate every student turn across 4 dimensions:
-               - Target vocabulary usage (which target expressions they used, or which one fits their thought right now).
+               - Target vocabulary usage (which target expressions from the list they used, or which specific expression from the lesson fits their thought right now).
                - Grammar & accuracy (concise explanation in Russian + corrected English sentence).
-               - Native phrasing / idioms (how an educated native speaker would naturally phrase the student's idea).
-               - Pronunciation & intonation (analyze the attached audio if present, or phonetic challenges of the words they used: word stress, linking, weak forms, rising/falling intonation, in Russian).
-            4. If the student made a notable mistake or missed a great opportunity to use a target phrase, set "repeatPrompt" to a short natural sentence containing the target phrase and ask them in your reply to try saying it out loud, or ask the next engaging follow-up question from the lesson topic.
+               - Native phrasing / idioms (how an educated native speaker would naturally phrase the student's exact idea).
+               - Pronunciation & intonation (listen carefully to the attached audio if present, or analyze phonetic challenges of the words they used: word stress, linking, weak forms, rising/falling intonation, in Russian, plus word-by-word IPA breakdown).
+            4. If the student made a notable mistake or missed a great opportunity to use a target phrase, set "repeatPrompt" to a short natural sentence containing that target phrase and ask them in your reply to try saying it out loud, or ask the next engaging follow-up question on the lesson topic.
             
             Return ONLY valid JSON matching this exact structure:
             {
@@ -119,24 +156,86 @@ class GeminiTutorService(
             $historyTranscript
             
             STUDENT'S NEW TURN (STT hint: "$userSpeechText"):
-            Please listen to the student's audio (if attached) and/or read their transcript, then respond with the JSON object.
+            Listen to the student's audio (if attached) and/or read their transcript, then respond with the JSON object.
         """.trimIndent()
 
-        runCatching {
-            val rawJson = callGeminiGenerateContent(
-                apiKey = apiKey,
-                modelId = modelId,
-                promptText = "$systemInstruction\n\n$userPrompt",
-                audioFile = audioFile
-            )
-            json.decodeFromString<TutorTurnResponse>(cleanJsonFence(rawJson))
-        }.getOrElse {
-            buildSimulatedTutorResponse(lesson, history, userSpeechText)
-        }
+        val rawJson = callGeminiGenerateContent(
+            apiKey = key,
+            modelId = modelId,
+            promptText = "$systemInstruction\n\n$userPrompt",
+            audioFile = audioFile
+        )
+        json.decodeFromString<TutorTurnResponse>(cleanJsonFence(rawJson))
     }
 
     /**
-     * Evaluates an active Spaced Repetition (SRS) oral exercise (RU->EN, EN->EN paraphrase, or Situational Q&A).
+     * Dynamically generates a fresh, contextually natural SRS exercise prompt via Gemini for any vocabulary item & mode.
+     * Nothing is hardcoded.
+     */
+    suspend fun generateSrsChallenge(
+        apiKey: String,
+        modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
+        vocab: VocabularyItem,
+        mode: SrsExerciseMode,
+        lessonTitle: String = ""
+    ): SrsChallenge = withContext(Dispatchers.IO) {
+        val key = requireApiKey(apiKey)
+
+        val modeInstructions = when (mode) {
+            SrsExerciseMode.RU_TO_EN -> """
+                Generate a natural, realistic Russian sentence (1 sentence) from everyday life or work that the student must translate into English out loud using the exact target English expression "${vocab.expression}" (${vocab.translationRu}).
+                Make sure the Russian sentence naturally conveys the meaning of "${vocab.expression}" so it makes 100% sense in context.
+                In "promptText", write the Russian instruction and the Russian sentence to translate.
+            """.trimIndent()
+
+            SrsExerciseMode.EN_TO_EN_PARAPHRASE -> """
+                Generate a simple, plain English sentence (1 sentence) that expresses the meaning of "${vocab.expression}" using basic words or synonyms (${vocab.synonyms.joinToString(", ")}), WITHOUT using "${vocab.expression}" itself.
+                Ask the student (in Russian + show the English sentence) to rephrase/paraphrase that English sentence out loud by replacing the simple wording with the target idiom/expression "${vocab.expression}".
+            """.trimIndent()
+
+            SrsExerciseMode.SITUATIONAL_QA -> """
+                Generate a thought-provoking conversational question in English (with a brief Russian instruction) about a realistic life or work scenario that naturally invites the student to use "${vocab.expression}" in their spoken answer.
+            """.trimIndent()
+        }
+
+        val prompt = """
+            You are creating a dynamic Spaced Repetition (SRS) speaking drill for an English learner.
+            Lesson context: "$lessonTitle"
+            Target Expression: "${vocab.expression}"
+            English Definition: "${vocab.definitionEn}"
+            Russian Meaning: "${vocab.translationRu}"
+            Example from lesson: "${vocab.exampleSentence}"
+            Synonyms: ${vocab.synonyms.joinToString(", ")}
+            
+            TASK FOR MODE ${mode.name}:
+            $modeInstructions
+            
+            Create a fresh, unique exercise every time. Return ONLY valid JSON:
+            {
+              "promptText": "The full exercise prompt to display to the student",
+              "hintText": "Short helpful hint in Russian without giving away the full answer",
+              "sampleIdealAnswer": "One complete, natural English sentence that solves this prompt using '${vocab.expression}'"
+            }
+        """.trimIndent()
+
+        val rawJson = callGeminiGenerateContent(
+            apiKey = key,
+            modelId = modelId,
+            promptText = prompt,
+            audioFile = null
+        )
+        val parsed = json.decodeFromString<GeneratedSrsChallengeSchema>(cleanJsonFence(rawJson))
+        SrsChallenge(
+            vocabId = vocab.id,
+            modeName = mode.name,
+            promptText = parsed.promptText,
+            hintText = parsed.hintText,
+            sampleIdealAnswer = parsed.sampleIdealAnswer
+        )
+    }
+
+    /**
+     * Evaluates an active Spaced Repetition (SRS) oral exercise strictly via Gemini API.
      */
     suspend fun evaluateSrsAttempt(
         apiKey: String,
@@ -147,9 +246,7 @@ class GeminiTutorService(
         userSpokenText: String,
         audioFile: File?
     ): SrsEvaluationResult = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) {
-            return@withContext buildSimulatedSrsEvaluation(vocab, mode, userSpokenText)
-        }
+        val key = requireApiKey(apiKey)
 
         val prompt = """
             You are evaluating an English learner's spoken answer in a Spaced Repetition active recall drill.
@@ -160,7 +257,7 @@ class GeminiTutorService(
             Challenge Prompt given to student: "$challengePrompt"
             Student's spoken answer (STT hint): "$userSpokenText"
             
-            Evaluate if the student accurately expressed the meaning and properly used "${vocab.expression}" in natural English. Also evaluate their pronunciation/intonation from the audio if attached.
+            Listen to the attached audio (if present) and/or read the transcript. Evaluate if the student accurately expressed the meaning, used "${vocab.expression}" (with correct tense/prepositions/articles), and how natural their pronunciation & intonation sounded.
             Return ONLY valid JSON:
             {
               "passed": true,
@@ -168,88 +265,82 @@ class GeminiTutorService(
               "recognizedSpeech": "Transcript of what the student said",
               "usedTargetExpression": true,
               "feedbackRu": "Подробный комментарий на русском языке: насколько точно построена фраза, грамматика и уместность использования выражения",
-              "nativePolishedVersion": "Ideal natural English sentence using '${vocab.expression}'",
-              "pronunciationTip": "Совет по произношению и интонации этой фразы на русском"
+              "nativePolishedVersion": "Ideal natural English sentence solving this prompt using '${vocab.expression}'",
+              "pronunciationTip": "Совет по произношению, ударениям и интонации этой фразы на русском"
             }
         """.trimIndent()
 
-        runCatching {
-            val rawJson = callGeminiGenerateContent(
-                apiKey = apiKey,
-                modelId = modelId,
-                promptText = prompt,
-                audioFile = audioFile
-            )
-            json.decodeFromString<SrsEvaluationResult>(cleanJsonFence(rawJson))
-        }.getOrElse {
-            buildSimulatedSrsEvaluation(vocab, mode, userSpokenText)
-        }
+        val rawJson = callGeminiGenerateContent(
+            apiKey = key,
+            modelId = modelId,
+            promptText = prompt,
+            audioFile = audioFile
+        )
+        json.decodeFromString<SrsEvaluationResult>(cleanJsonFence(rawJson))
     }
 
     /**
-     * Uses Gemini to turn scraped BBC page text into a structured Lesson with vocabulary & synonyms.
+     * Uses Gemini to turn scraped BBC page text into a structured Lesson with vocabulary, definitions,
+     * Russian translations, synonyms, transcript lines for shadowing, and discussion questions.
      */
     suspend fun extractLessonFromScrapedPage(
         apiKey: String,
         modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
         scraped: BbcLessonParser.ScrapedBbcPage
     ): Lesson = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) {
-            return@withContext BbcLessonParser.buildFallbackLessonFromScraped(scraped)
-        }
+        val key = requireApiKey(apiKey)
 
         val prompt = """
-            Extract a structured English conversation lesson from this BBC Learning English (6 Minute English) page content.
+            Extract a comprehensive English conversation lesson from this BBC Learning English (6 Minute English) page content.
             URL: ${scraped.url}
             Page Title: ${scraped.title}
             Content:
-            ${scraped.rawText.take(8000)}
+            ${scraped.rawText.take(14000)}
+            
+            Extract ALL target vocabulary items taught in the episode (plus key idiomatic expressions used by the presenters), a clean excerpt of dialogue lines from the transcript (6-10 lines formatted as "Speaker: line" for shadowing practice), and 4 engaging discussion questions that invite the student to use the vocabulary.
             
             Return ONLY valid JSON with this structure:
             {
               "title": "Episode title",
-              "topicSummary": "2-3 sentence summary in English + brief Russian context",
-              "discussionQuestions": ["Question 1 inviting target vocabulary use", "Question 2", "Question 3"],
+              "topicSummary": "2-3 sentence summary in Russian & English explaining what the episode is about",
+              "transcriptExcerpt": "Speaker 1: ...\nSpeaker 2: ...",
+              "discussionQuestions": ["Question 1", "Question 2", "Question 3", "Question 4"],
               "vocabulary": [
                 {
-                  "expression": "exact phrase or idiom from the episode",
-                  "definitionEn": "clear English definition",
-                  "translationRu": "точный перевод на русский",
-                  "exampleSentence": "natural example sentence from or inspired by the episode",
-                  "synonyms": ["synonym 1", "paraphrase 2"]
+                  "expression": "exact phrase, collocation, or idiom from the episode",
+                  "definitionEn": "clear English definition from the episode",
+                  "translationRu": "точный естественный перевод на русский",
+                  "exampleSentence": "natural example sentence from the episode",
+                  "synonyms": ["English synonym 1", "English paraphrase 2"]
                 }
               ]
             }
         """.trimIndent()
 
-        runCatching {
-            val rawJson = callGeminiGenerateContent(apiKey, modelId, prompt, audioFile = null)
-            val parsed = json.decodeFromString<ExtractedLessonSchema>(cleanJsonFence(rawJson))
-            val lessonId = "bbc_" + UUID.randomUUID().toString().take(8)
-            Lesson(
-                id = lessonId,
-                title = parsed.title,
-                subtitle = "BBC Learning English • 6 Minute English",
-                sourceUrl = scraped.url,
-                dateLabel = "Импортирован по ссылке",
-                topicSummary = parsed.topicSummary,
-                discussionQuestions = parsed.discussionQuestions,
-                transcriptExcerpt = scraped.rawText.take(2500),
-                vocabulary = parsed.vocabulary.mapIndexed { index, v ->
-                    VocabularyItem(
-                        id = "${lessonId}_v$index",
-                        lessonId = lessonId,
-                        expression = v.expression,
-                        definitionEn = v.definitionEn,
-                        translationRu = v.translationRu,
-                        exampleSentence = v.exampleSentence,
-                        synonyms = v.synonyms
-                    )
-                }
-            )
-        }.getOrElse {
-            BbcLessonParser.buildFallbackLessonFromScraped(scraped)
-        }
+        val rawJson = callGeminiGenerateContent(key, modelId, prompt, audioFile = null)
+        val parsed = json.decodeFromString<ExtractedLessonSchema>(cleanJsonFence(rawJson))
+        val lessonId = "bbc_" + UUID.randomUUID().toString().take(8)
+        Lesson(
+            id = lessonId,
+            title = parsed.title,
+            subtitle = "BBC Learning English • 6 Minute English",
+            sourceUrl = scraped.url,
+            dateLabel = scraped.url.substringAfterLast('/'),
+            topicSummary = parsed.topicSummary,
+            discussionQuestions = parsed.discussionQuestions,
+            transcriptExcerpt = parsed.transcriptExcerpt.ifBlank { scraped.rawText.take(2500) },
+            vocabulary = parsed.vocabulary.mapIndexed { index, v ->
+                VocabularyItem(
+                    id = "${lessonId}_v$index",
+                    lessonId = lessonId,
+                    expression = v.expression,
+                    definitionEn = v.definitionEn,
+                    translationRu = v.translationRu,
+                    exampleSentence = v.exampleSentence,
+                    synonyms = v.synonyms
+                )
+            }
+        )
     }
 
     private fun callGeminiGenerateContent(
@@ -264,8 +355,8 @@ class GeminiTutorService(
         val url = URL(endpoint)
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 20_000
-            readTimeout = 30_000
+            connectTimeout = 25_000
+            readTimeout = 45_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
         }
@@ -318,7 +409,7 @@ class GeminiTutorService(
             .use { it.readText() }
 
         if (status !in 200..299) {
-            throw IllegalStateException("Gemini API HTTP $status: $body")
+            throw IllegalStateException("Gemini API ($cleanModel) HTTP $status: $body")
         }
 
         val root = json.parseToJsonElement(body).jsonObject
@@ -329,7 +420,7 @@ class GeminiTutorService(
             ?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("text")
             ?.jsonPrimitive?.content
-            ?: throw IllegalStateException("Empty Gemini response")
+            ?: throw IllegalStateException("Пустой ответ от модели $cleanModel")
 
         return text
     }
@@ -340,131 +431,5 @@ class GeminiTutorService(
             .removePrefix("```")
             .removeSuffix("```")
             .trim()
-    }
-
-    /**
-     * Built-in intelligent local analyzer when running without an API key so the user can test
-     * every Push-to-Talk flow, target vocabulary tracking, grammar/native rephrasing, and SRS drills immediately.
-     */
-    private fun buildSimulatedTutorResponse(
-        lesson: Lesson,
-        history: List<ChatMessage>,
-        userSpeech: String
-    ): TutorTurnResponse {
-        val cleanSpeech = userSpeech.trim().ifBlank {
-            "I think this topic is really interesting, especially when we think about how it affects our daily routine."
-        }
-        val lowerSpeech = cleanSpeech.lowercase()
-
-        val matchedVocab = lesson.vocabulary.filter { vocab ->
-            lowerSpeech.contains(vocab.expression.lowercase())
-        }.map { it.expression }
-
-        val unusedVocab = lesson.vocabulary.firstOrNull { vocab ->
-            !matchedVocab.contains(vocab.expression)
-        } ?: lesson.vocabulary.first()
-
-        val nextQuestionIndex = (history.count { it.sender == MessageSender.USER }) % lesson.discussionQuestions.size
-        val nextQuestion = lesson.discussionQuestions[nextQuestionIndex]
-
-        val score = if (matchedVocab.isNotEmpty()) 92 else 78
-
-        val reply = if (matchedVocab.isNotEmpty()) {
-            "Spot on! I loved how naturally you used '${matchedVocab.first()}'. Building on that idea — $nextQuestion Try working '${unusedVocab.expression}' into your next answer!"
-        } else {
-            "That's a very fair point! To make it sound even more like a native speaker from this BBC episode, you could use '${unusedVocab.expression}' (${unusedVocab.definitionEn}). First, try repeating after me: \"${unusedVocab.exampleSentence}\" — or go ahead and answer: $nextQuestion"
-        }
-
-        val polished = if (matchedVocab.isNotEmpty()) {
-            "To be honest, $cleanSpeech — and in the long run, that makes a huge difference."
-        } else {
-            "$cleanSpeech — in fact, ${unusedVocab.exampleSentence.replaceFirstChar { it.lowercase() }}"
-        }
-
-        val analysis = SpeechAnalysis(
-            userTranscript = cleanSpeech,
-            overallScore = score,
-            targetVocabUsed = matchedVocab,
-            targetVocabSuggestion = if (matchedVocab.isEmpty()) {
-                "Попробуйте ввернуть фразу «${unusedVocab.expression}» (${unusedVocab.translationRu}): например, «${unusedVocab.exampleSentence}»."
-            } else {
-                "Отлично! Вы активно использовали целевую лексику (${matchedVocab.joinToString()}). В следующей реплике попробуйте «${unusedVocab.expression}»."
-            },
-            grammarFeedback = "Грамматическая основа верная. Обратите внимание на связки идей: вместо коротких простых предложений соединяйте мысли вводными конструкциями (To be fair..., What strikes me is that...).",
-            correctedSentence = cleanSpeech.replaceFirstChar { it.uppercase() }.let {
-                if (it.endsWith(".") || it.endsWith("!") || it.endsWith("?")) it else "$it."
-            },
-            nativeAlternative = polished,
-            pronunciationScore = 86,
-            pronunciationNotes = "Следите за связыванием (linking) на стыке согласной и гласной в беглой речи и не оглушайте звонкие согласные на конце слов (особенно -d, -z, -v).",
-            intonationNotes = "В развернутых ответах делайте плавное понижение тона (falling tone) в конце ключевой мысли, а на вводных фразах — легкий восходящий тон.",
-            wordBreakdown = buildSimulatedWordBreakdown(cleanSpeech),
-            repeatPrompt = if (matchedVocab.isEmpty()) unusedVocab.exampleSentence else null
-        )
-
-        return TutorTurnResponse(
-            tutorReplyEn = reply,
-            analysis = analysis
-        )
-    }
-
-    private fun buildSimulatedWordBreakdown(speech: String): List<WordPronunciationItem> {
-        val rawWords = speech.split(Regex("\\s+")).filter { it.isNotBlank() }.take(14)
-        return rawWords.map { raw ->
-            val clean = raw.lowercase().trim(',', '.', '!', '?', '"', '\'')
-            when {
-                clean.contains("th") -> WordPronunciationItem(
-                    word = raw,
-                    status = "WARN",
-                    ipa = "/ð/ or /θ/",
-                    tipRu = "Межзубный звук [θ/ð]: кончик языка между зубами, не заменяйте на русские [с/з] или [т/д]."
-                )
-                clean.endsWith("ing") && clean.length > 4 -> WordPronunciationItem(
-                    word = raw,
-                    status = "WARN",
-                    ipa = "/-ɪŋ/",
-                    tipRu = "Носовой звук [ŋ] на конце -ing: не произносите твердый звук [г] или [к] в конце."
-                )
-                clean.length >= 8 -> WordPronunciationItem(
-                    word = raw,
-                    status = "NEEDS_WORK",
-                    ipa = "/ˈ${clean.take(4)}.../",
-                    tipRu = "В длинных многосложных словах четко выделяйте главный ударный слог, а безударные гласные редуцируйте до нейтрального звука шва [ə]."
-                )
-                else -> WordPronunciationItem(
-                    word = raw,
-                    status = "GOOD",
-                    ipa = "/$clean/",
-                    tipRu = "Произнесено чисто. Сливайте со соседним словом без паузы (linking)."
-                )
-            }
-        }
-    }
-
-    private fun buildSimulatedSrsEvaluation(
-        vocab: VocabularyItem,
-        mode: SrsExerciseMode,
-        userSpokenText: String
-    ): SrsEvaluationResult {
-        val text = userSpokenText.trim().ifBlank { vocab.exampleSentence }
-        val usedTarget = text.lowercase().contains(vocab.expression.lowercase())
-        val passed = usedTarget || text.split(" ").size >= 4
-        val score = if (usedTarget) 94 else 68
-
-        val feedback = if (usedTarget) {
-            "Отлично! Вы правильно встроили выражение «${vocab.expression}» (${vocab.translationRu}) в контекст предложения в режиме «${mode.titleRu}»."
-        } else {
-            "Смысл передан близко, но вы не использовали целевое выражение «${vocab.expression}» (${vocab.translationRu}). Попробуйте произнести фразу еще раз, обязательно включив это выражение!"
-        }
-
-        return SrsEvaluationResult(
-            passed = passed,
-            score = score,
-            recognizedSpeech = text,
-            usedTargetExpression = usedTarget,
-            feedbackRu = feedback,
-            nativePolishedVersion = vocab.exampleSentence,
-            pronunciationTip = "Выделяйте голосом ударное слово внутри чанка «${vocab.expression}», а служебные предлоги и артикли произносите слитно в слабой позиции (weak form)."
-        )
     }
 }
