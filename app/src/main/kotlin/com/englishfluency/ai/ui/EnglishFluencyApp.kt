@@ -17,13 +17,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -32,8 +37,11 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Mic
@@ -496,7 +504,17 @@ private fun PushToTalkCoachTab(
     val conversationError by vm.conversationError.collectAsState()
 
     var showShadowingPanel by rememberSaveable { mutableStateOf(false) }
+    var showVocabAccordion by rememberSaveable { mutableStateOf(false) }
+    var selectedVocabPreviewId by rememberSaveable { mutableStateOf<String?>(null) }
     var draftInput by rememberSaveable { mutableStateOf("") }
+    val chatListState = rememberLazyListState()
+
+    LaunchedEffect(messages.size, isProcessingTurn) {
+        if (messages.isNotEmpty()) {
+            chatListState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
     var hasMicPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -517,29 +535,54 @@ private fun PushToTalkCoachTab(
         }
     }
 
+    val usedVocabCount = lesson.vocabulary.count { it.timesUsedInConversation > 0 }
+    val selectedPreviewVocab = lesson.vocabulary.find { it.id == selectedVocabPreviewId }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        // Target vocabulary bar at top of conversation + BBC Shadowing toggle
+        // Ultra-compact Target Vocabulary Carousel + Expandable Accordion + BBC Shadowing toggle
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Слова урока (нажмите для озвучки):",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showVocabAccordion = !showVocabAccordion
+                                if (showVocabAccordion) showShadowingPanel = false
+                            }
+                            .padding(vertical = 2.dp, horizontal = 4.dp)
+                    ) {
+                        Text(
+                            text = "🎯 Слова ($usedVocabCount/${lesson.vocabulary.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            if (showVocabAccordion) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = "Развернуть список слов",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     AssistChip(
-                        onClick = { showShadowingPanel = !showShadowingPanel },
+                        onClick = {
+                            showShadowingPanel = !showShadowingPanel
+                            if (showShadowingPanel) showVocabAccordion = false
+                        },
                         label = {
                             Text(
-                                if (showShadowingPanel) "Скрыть Shadowing" else "🎧 BBC Shadowing",
+                                if (showShadowingPanel) "Скрыть Shadowing" else "🎧 Shadowing",
                                 style = MaterialTheme.typography.labelSmall
                             )
                         },
@@ -547,11 +590,11 @@ private fun PushToTalkCoachTab(
                             Icon(
                                 Icons.Default.Headphones,
                                 contentDescription = null,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     )
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                     IconButton(
                         onClick = { vm.resetCurrentConversation() },
                         modifier = Modifier.size(28.dp)
@@ -563,34 +606,159 @@ private fun PushToTalkCoachTab(
                         )
                     }
                 }
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    lesson.vocabulary.forEach { vocab ->
-                        val used = vocab.timesUsedInConversation > 0
-                        AssistChip(
-                            onClick = {
-                                vm.speakText("${vocab.expression}. ${vocab.exampleSentence}")
-                            },
-                            label = {
-                                Text(
-                                    text = "${vocab.expression} — ${vocab.translationRu}",
-                                    style = MaterialTheme.typography.labelSmall
+
+                // Default state: compact 1-line horizontal LazyRow carousel
+                if (!showVocabAccordion) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(lesson.vocabulary, key = { it.id }) { vocab ->
+                            val used = vocab.timesUsedInConversation > 0
+                            val isSelected = vocab.id == selectedVocabPreviewId
+                            AssistChip(
+                                onClick = {
+                                    selectedVocabPreviewId = if (isSelected) null else vocab.id
+                                    vm.speakText("${vocab.expression}. ${vocab.exampleSentence}")
+                                },
+                                leadingIcon = if (used) {
+                                    {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                } else null,
+                                label = {
+                                    Text(
+                                        text = vocab.expression,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = when {
+                                        isSelected -> MaterialTheme.colorScheme.secondaryContainer
+                                        used -> MaterialTheme.colorScheme.primaryContainer
+                                        else -> MaterialTheme.colorScheme.surface
+                                    }
                                 )
-                            },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (used) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surface
-                                }
                             )
-                        )
+                        }
+                    }
+
+                    // Compact 1-tap preview strip when a word in the carousel is tapped
+                    AnimatedVisibility(visible = selectedPreviewVocab != null) {
+                        if (selectedPreviewVocab != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp)
+                                    .clickable {
+                                        vm.speakText("${selectedPreviewVocab.expression}. ${selectedPreviewVocab.exampleSentence}")
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${selectedPreviewVocab.expression} — ${selectedPreviewVocab.translationRu}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = selectedPreviewVocab.exampleSentence,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontStyle = FontStyle.Italic,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { selectedVocabPreviewId = null },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Скрыть подсказку",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                // Expandable BBC Transcript Shadowing Deck (Stage 1 v1.1)
+                // Expanded Accordion: Full Vocabulary Sheet with height cap so chat stays visible
+                AnimatedVisibility(visible = showVocabAccordion) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .heightIn(max = 210.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(10.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            lesson.vocabulary.forEach { vocab ->
+                                val used = vocab.timesUsedInConversation > 0
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (used) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            vm.speakText("${vocab.expression}. ${vocab.exampleSentence}")
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${vocab.expression} — ${vocab.translationRu}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = vocab.definitionEn,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.VolumeUp,
+                                            contentDescription = "Озвучить",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Expandable BBC Transcript Shadowing Deck (with height cap so chat remains visible)
                 AnimatedVisibility(visible = showShadowingPanel) {
                     val transcriptLines = remember(lesson.transcriptExcerpt) {
                         lesson.transcriptExcerpt.lines().map { it.trim() }.filter { it.isNotBlank() }
@@ -598,13 +766,16 @@ private fun PushToTalkCoachTab(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp),
+                            .padding(top = 6.dp)
+                            .heightIn(max = 210.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                         )
                     ) {
                         Column(
-                            modifier = Modifier.padding(10.dp),
+                            modifier = Modifier
+                                .padding(10.dp)
+                                .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Row(
@@ -613,7 +784,7 @@ private fun PushToTalkCoachTab(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "🎧 Практика Shadowing по транскрипту BBC",
+                                    text = "🎧 Shadowing по транскрипту",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -628,11 +799,6 @@ private fun PushToTalkCoachTab(
                                     }
                                 }
                             }
-                            Text(
-                                text = "Нажмите на реплику из урока, чтобы прослушать в выбранном темпе и повторить:",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                             transcriptLines.take(8).forEach { line ->
                                 val spokenPart = line.substringAfter(":", line).trim()
                                 Surface(
@@ -672,6 +838,7 @@ private fun PushToTalkCoachTab(
 
         // Chat & Feedback cards list
         LazyColumn(
+            state = chatListState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
