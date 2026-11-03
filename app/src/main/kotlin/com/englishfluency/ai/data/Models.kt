@@ -38,6 +38,14 @@ data class VocabularyItem(
 )
 
 @Serializable
+enum class LessonSourceType(val labelRu: String, val badgeEmoji: String) {
+    BBC("BBC 6 Minute English", "🎙️"),
+    YOUTUBE("YouTube", "📺"),
+    WEB_ARTICLE("Веб-статья", "🌐"),
+    CUSTOM_NOTES("Заметки & Текст", "📝")
+}
+
+@Serializable
 data class Lesson(
     val id: String,
     val title: String,
@@ -47,7 +55,8 @@ data class Lesson(
     val topicSummary: String,
     val discussionQuestions: List<String>,
     val transcriptExcerpt: String,
-    val vocabulary: List<VocabularyItem>
+    val vocabulary: List<VocabularyItem>,
+    val sourceType: LessonSourceType = LessonSourceType.BBC
 )
 
 @Serializable

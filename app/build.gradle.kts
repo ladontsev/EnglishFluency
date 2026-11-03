@@ -11,8 +11,8 @@ android {
     applicationId = "com.englishfluency.ai"
     minSdk = 24
     targetSdk = 36
-    versionCode = 12
-    versionName = "2.0.0"
+    versionCode = 13
+    versionName = "2.1.0"
   }
 
   buildTypes {
@@ -24,6 +24,11 @@ android {
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+  }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+    }
   }
   buildFeatures {
     compose = true

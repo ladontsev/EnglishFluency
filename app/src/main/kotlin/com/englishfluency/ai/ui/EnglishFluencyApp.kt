@@ -108,6 +108,8 @@ import com.englishfluency.ai.data.SpeechAnalysis
 import com.englishfluency.ai.data.SrsExerciseMode
 import com.englishfluency.ai.data.SrsFilterCategory
 import com.englishfluency.ai.data.VocabularyItem
+import com.englishfluency.ai.data.UniversalContentParser
+import com.englishfluency.ai.data.LessonSourceType
 import com.englishfluency.ai.data.WordPronunciationItem
 import java.io.File
 import kotlin.math.abs
@@ -1446,7 +1448,7 @@ private fun UserMessageWithAnalysisCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (hasRecordedAudio && audioPath != null) {
+                    if (audioPath != null) {
                         OutlinedButton(
                             onClick = { onPlayRecordedFile(audioPath) },
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -2170,7 +2172,7 @@ private fun SrsActiveTrainerTab(
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        if (hasAudio && audioPath != null) {
+                        if (audioPath != null) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)

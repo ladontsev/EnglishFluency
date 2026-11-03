@@ -508,6 +508,101 @@ class GeminiTutorService(
         )
     }
 
+
+    /**
+     * Stage 3 (v2.1): Universal Importer
+     * Converts YouTube transcripts, Web Articles, or Raw User Notes into structured conversation lessons.
+     */
+    suspend fun extractUniversalLesson(
+        apiKey: String,
+        modelId: String = FluencyRepository.DEFAULT_GEMINI_MODEL,
+        content: UniversalContentParser.ExtractedContent
+    ): Lesson = withContext(Dispatchers.IO) {
+        val key = requireApiKey(apiKey)
+
+        val typeDescription = when (content.contentType) {
+            UniversalContentParser.UniversalContentType.BBC -> "BBC 6 Minute English episode"
+            UniversalContentParser.UniversalContentType.YOUTUBE -> "YouTube educational/conversational video transcript"
+            UniversalContentParser.UniversalContentType.WEB_ARTICLE -> "Web article ()"
+            UniversalContentParser.UniversalContentType.CUSTOM_NOTES -> "Custom user speech, notes or email draft"
+        }
+
+        val prompt = """
+            You are a master British & International English conversational coach.
+            Your task is to transform the provided content into an engaging, high-yield English conversation practice lesson.
+            
+            Source type: typeDescription
+            Original Title: {content.title}
+            Source Info: {content.sourceLabel}
+            URL: {content.sourceUrl}
+            
+            Content text:
+            {content.rawText.take(15000)}
+            
+            Analyze the content and extract:
+            1. "title": An engaging, concise English lesson title (if the source title is messy or too long, polish it).
+            2. "topicSummary": A 2-3 sentence overview in Russian & English describing the main ideas, core debate or message, and why this is great for discussion.
+            3. "transcriptExcerpt": A dialogue or quote excerpt (6-10 lines formatted as "Speaker: line" or clean punchy sentences) highlighting the best spoken rhythm and expressions for shadowing and pronunciation practice.
+            4. "discussionQuestions": Exactly 4 thought-provoking, open-ended discussion questions in English that invite the student to use the target expressions in a realistic conversation.
+            5. "vocabulary": An array of 6-10 high-value, authentic English expressions from this content (idioms, phrasal verbs, advanced collocations, native conversational transitions). For each item:
+               - "expression": exact phrase or collocation
+               - "definitionEn": clear, concise English definition explaining exact nuance and register
+               - "translationRu": natural, accurate Russian translation matching the context
+               - "exampleSentence": natural example sentence demonstrating how to use it in conversation
+               - "synonyms": 2-3 natural English synonyms or paraphrases
+            
+            Return ONLY valid JSON matching this schema:
+            {
+              "title": "Clean English title",
+              "topicSummary": "2-3 sentence summary in Russian & English",
+              "transcriptExcerpt": "Speaker 1: ...\nSpeaker 2: ...",
+              "discussionQuestions": ["Question 1", "Question 2", "Question 3", "Question 4"],
+              "vocabulary": [
+                {
+                  "expression": "target phrase or idiom",
+                  "definitionEn": "clear English definition",
+                  "translationRu": "точный русский перевод",
+                  "exampleSentence": "natural example sentence",
+                  "synonyms": ["synonym 1", "synonym 2"]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val rawJson = callGeminiGenerateContent(key, modelId, prompt, audioFile = null)
+        val parsed = json.decodeFromString<ExtractedLessonSchema>(cleanJsonFence(rawJson))
+        val prefix = when (content.contentType) {
+            UniversalContentParser.UniversalContentType.BBC -> "bbc_"
+            UniversalContentParser.UniversalContentType.YOUTUBE -> "yt_"
+            UniversalContentParser.UniversalContentType.WEB_ARTICLE -> "web_"
+            UniversalContentParser.UniversalContentType.CUSTOM_NOTES -> "note_"
+        }
+        val lessonId = prefix + UUID.randomUUID().toString().take(8)
+        val todayFormatted = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+
+        Lesson(
+            id = lessonId,
+            title = parsed.title.ifBlank { content.title },
+            subtitle = content.sourceLabel,
+            sourceUrl = content.sourceUrl,
+            dateLabel = todayFormatted,
+            topicSummary = parsed.topicSummary,
+            discussionQuestions = parsed.discussionQuestions,
+            transcriptExcerpt = parsed.transcriptExcerpt.ifBlank { content.rawText.take(2500) },
+            vocabulary = parsed.vocabulary.mapIndexed { index, v ->
+                VocabularyItem(
+                    id = "{lessonId}_vindex",
+                    lessonId = lessonId,
+                    expression = v.expression,
+                    definitionEn = v.definitionEn,
+                    translationRu = v.translationRu,
+                    exampleSentence = v.exampleSentence,
+                    synonyms = v.synonyms
+                )
+            },
+            sourceType = content.contentType.toLessonSourceType()
+        )
+    }
     private fun callGeminiGenerateContent(
         apiKey: String,
         modelId: String,

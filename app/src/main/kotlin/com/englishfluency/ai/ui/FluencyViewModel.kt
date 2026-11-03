@@ -20,6 +20,7 @@ import com.englishfluency.ai.data.SrsEvaluationResult
 import com.englishfluency.ai.data.SrsExerciseMode
 import com.englishfluency.ai.data.SrsFilterCategory
 import com.englishfluency.ai.data.VocabularyItem
+import com.englishfluency.ai.data.UniversalContentParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -257,6 +258,91 @@ class FluencyViewModel(application: Application) : AndroidViewModel(application)
         return lessons.value.find { it.id == _selectedLessonId.value } ?: lessons.value.firstOrNull()
     }
 
+
+    /**
+     * Stage 3 (v2.1): Universal Importer
+     * Imports lessons from YouTube, Web Articles, BBC, or Raw User Notes.
+     */
+    fun importFromUniversalSource(
+        type: UniversalContentParser.UniversalContentType,
+        input: String,
+        customTitle: String? = null,
+        onSuccess: (Lesson) -> Unit
+    ) {
+        if (input.isBlank()) return
+        if (apiKey.value.isBlank()) {
+            _urlImportStatus.value = "⚠️ Сначала укажите ваш Gemini API Key во вкладке «Настройки»!"
+            return
+        }
+
+        val cleanInput = input.trim()
+        viewModelScope.launch {
+            _isLoadingUrl.value = true
+            _importingUrl.value = cleanInput.take(120)
+            _urlImportStatus.value = when (type) {
+                UniversalContentParser.UniversalContentType.YOUTUBE -> "Получение субтитров YouTube через InnerTube..."
+                UniversalContentParser.UniversalContentType.WEB_ARTICLE -> "Загрузка веб-статьи и очистка контента..."
+                UniversalContentParser.UniversalContentType.CUSTOM_NOTES -> "Обработка заметок..."
+                UniversalContentParser.UniversalContentType.BBC -> "Загрузка страницы BBC 6 Minute English..."
+            }
+
+            val extractedResult: Result<UniversalContentParser.ExtractedContent> = when (type) {
+                UniversalContentParser.UniversalContentType.YOUTUBE ->
+                    UniversalContentParser.parseYouTubeVideo(cleanInput)
+                UniversalContentParser.UniversalContentType.WEB_ARTICLE ->
+                    UniversalContentParser.parseWebArticle(cleanInput)
+                UniversalContentParser.UniversalContentType.CUSTOM_NOTES ->
+                    UniversalContentParser.parseRawNotes(cleanInput, customTitle)
+                UniversalContentParser.UniversalContentType.BBC -> {
+                    BbcLessonParser.fetchRawPageContent(cleanInput).map { scraped ->
+                        UniversalContentParser.ExtractedContent(
+                            title = scraped.title,
+                            sourceUrl = scraped.url,
+                            sourceLabel = "BBC Learning English • 6 Minute English",
+                            rawText = scraped.rawText,
+                            contentType = UniversalContentParser.UniversalContentType.BBC
+                        )
+                    }
+                }
+            }
+
+            extractedResult.fold(
+                onSuccess = { content ->
+                    _urlImportStatus.value = "ИИ Gemini () анализирует текст и извлекает идиомы..."
+                    runCatching {
+                        val lesson = geminiService.extractUniversalLesson(
+                            apiKey = apiKey.value,
+                            modelId = geminiModelId.value,
+                            content = content
+                        )
+                        val opening = runCatching {
+                            geminiService.generateOpeningQuestion(
+                                apiKey = apiKey.value,
+                                modelId = geminiModelId.value,
+                                lesson = lesson
+                            )
+                        }.getOrNull()
+
+                        repository.addOrReplaceLesson(lesson, opening)
+                        _selectedLessonId.value = lesson.id
+                        _urlImportStatus.value = "✅ Урок «» ( выражений) успешно создан!"
+                        _isLoadingUrl.value = false
+                        _importingUrl.value = null
+                        onSuccess(lesson)
+                    }.onFailure { aiErr ->
+                        _urlImportStatus.value = "Ошибка Gemini API: "
+                        _isLoadingUrl.value = false
+                        _importingUrl.value = null
+                    }
+                },
+                onFailure = { err ->
+                    _urlImportStatus.value = "Ошибка импорта: "
+                    _isLoadingUrl.value = false
+                    _importingUrl.value = null
+                }
+            )
+        }
+    }
     fun importBbcLessonFromUrl(url: String, onSuccess: (Lesson) -> Unit) {
         if (url.isBlank()) return
         if (apiKey.value.isBlank()) {
