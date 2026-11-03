@@ -101,6 +101,14 @@ class GeminiTutorService(
                 "pronunciationScore": 88,
                 "pronunciationNotes": "Разбор произношения на русском (ударения, связки слов, звуки)",
                 "intonationNotes": "Разбор интонации и ритма фразы на русском",
+                "wordBreakdown": [
+                  {
+                    "word": "word from student's transcript",
+                    "status": "GOOD or WARN or NEEDS_WORK",
+                    "ipa": "/fəˈnetɪk/",
+                    "tipRu": "Краткий совет по произношению этого слова на русском (ударение, звук, связка)"
+                  }
+                ],
                 "repeatPrompt": "Optional short English sentence for the student to repeat out loud, or null"
               }
             }
@@ -390,6 +398,7 @@ class GeminiTutorService(
             pronunciationScore = 86,
             pronunciationNotes = "Следите за связыванием (linking) на стыке согласной и гласной в беглой речи и не оглушайте звонкие согласные на конце слов (особенно -d, -z, -v).",
             intonationNotes = "В развернутых ответах делайте плавное понижение тона (falling tone) в конце ключевой мысли, а на вводных фразах — легкий восходящий тон.",
+            wordBreakdown = buildSimulatedWordBreakdown(cleanSpeech),
             repeatPrompt = if (matchedVocab.isEmpty()) unusedVocab.exampleSentence else null
         )
 
@@ -397,6 +406,39 @@ class GeminiTutorService(
             tutorReplyEn = reply,
             analysis = analysis
         )
+    }
+
+    private fun buildSimulatedWordBreakdown(speech: String): List<WordPronunciationItem> {
+        val rawWords = speech.split(Regex("\\s+")).filter { it.isNotBlank() }.take(14)
+        return rawWords.map { raw ->
+            val clean = raw.lowercase().trim(',', '.', '!', '?', '"', '\'')
+            when {
+                clean.contains("th") -> WordPronunciationItem(
+                    word = raw,
+                    status = "WARN",
+                    ipa = "/ð/ or /θ/",
+                    tipRu = "Межзубный звук [θ/ð]: кончик языка между зубами, не заменяйте на русские [с/з] или [т/д]."
+                )
+                clean.endsWith("ing") && clean.length > 4 -> WordPronunciationItem(
+                    word = raw,
+                    status = "WARN",
+                    ipa = "/-ɪŋ/",
+                    tipRu = "Носовой звук [ŋ] на конце -ing: не произносите твердый звук [г] или [к] в конце."
+                )
+                clean.length >= 8 -> WordPronunciationItem(
+                    word = raw,
+                    status = "NEEDS_WORK",
+                    ipa = "/ˈ${clean.take(4)}.../",
+                    tipRu = "В длинных многосложных словах четко выделяйте главный ударный слог, а безударные гласные редуцируйте до нейтрального звука шва [ə]."
+                )
+                else -> WordPronunciationItem(
+                    word = raw,
+                    status = "GOOD",
+                    ipa = "/$clean/",
+                    tipRu = "Произнесено чисто. Сливайте со соседним словом без паузы (linking)."
+                )
+            }
+        }
     }
 
     private fun buildSimulatedSrsEvaluation(

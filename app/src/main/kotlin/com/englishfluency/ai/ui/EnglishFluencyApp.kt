@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +34,9 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
@@ -89,11 +90,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.englishfluency.ai.data.ChatMessage
+import com.englishfluency.ai.data.FluencyRepository
 import com.englishfluency.ai.data.Lesson
 import com.englishfluency.ai.data.MessageSender
 import com.englishfluency.ai.data.SpeechAnalysis
 import com.englishfluency.ai.data.SrsExerciseMode
 import com.englishfluency.ai.data.VocabularyItem
+import com.englishfluency.ai.data.WordPronunciationItem
+import java.io.File
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,9 +129,9 @@ fun EnglishFluencyApp(vm: FluencyViewModel = viewModel()) {
                         Text(
                             text = when (selectedTab) {
                                 0 -> "Импорт по ссылке и целевая лексика"
-                                1 -> "Голосовой диалог + разбор речи, грамматики и интонации"
+                                1 -> "Голосовой диалог + Shadowing + разбор произношения"
                                 2 -> "Активное интервальное повторение выражений вслух"
-                                else -> "Gemini Multimodal API & Статистика"
+                                else -> "Gemini 3 Multimodal API & Обновления"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -379,8 +384,11 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
 
     val isRecording by vm.voiceController.isRecording.collectAsState()
     val livePartialTranscript by vm.voiceController.livePartialTranscript.collectAsState()
+    val playingAudioPath by vm.voiceController.playingAudioPath.collectAsState()
+    val speechRate by vm.voiceController.speechRate.collectAsState()
     val isProcessingTurn by vm.isProcessingTurn.collectAsState()
 
+    var showShadowingPanel by rememberSaveable { mutableStateOf(false) }
     var draftInput by rememberSaveable { mutableStateOf("") }
     var hasMicPermission by remember {
         mutableStateOf(
@@ -403,7 +411,7 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Target vocabulary bar at top of conversation
+        // Target vocabulary bar at top of conversation + BBC Shadowing toggle
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
@@ -415,10 +423,28 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Слова урока (нажмите, чтобы прослушать пример):",
+                        text = "Слова урока (нажмите для озвучки):",
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
                     )
+                    AssistChip(
+                        onClick = { showShadowingPanel = !showShadowingPanel },
+                        label = {
+                            Text(
+                                if (showShadowingPanel) "Скрыть Shadowing" else "🎧 BBC Shadowing",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Headphones,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    )
+                    Spacer(Modifier.width(4.dp))
                     IconButton(
                         onClick = { vm.resetCurrentConversation() },
                         modifier = Modifier.size(28.dp)
@@ -456,6 +482,84 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
                         )
                     }
                 }
+
+                // Expandable BBC Transcript Shadowing Deck (Stage 1 v1.1)
+                AnimatedVisibility(visible = showShadowingPanel) {
+                    val transcriptLines = remember(lesson.transcriptExcerpt) {
+                        lesson.transcriptExcerpt.lines().map { it.trim() }.filter { it.isNotBlank() }
+                    }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🎧 Практика Shadowing по транскрипту BBC",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(0.8f to "0.8x", 0.96f to "1.0x", 1.12f to "1.15x").forEach { (rate, label) ->
+                                        FilterChip(
+                                            selected = abs(speechRate - rate) < 0.05f,
+                                            onClick = { vm.voiceController.setTtsSpeechRate(rate) },
+                                            label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "Нажмите на реплику диктора, чтобы прослушать в выбранном темпе и повторить с той же интонацией:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            transcriptLines.forEach { line ->
+                                val spokenPart = line.substringAfter(":", line).trim()
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            draftInput = spokenPart
+                                            vm.speakText(spokenPart)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.PlayArrow,
+                                            contentDescription = "Слушать реплику",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = line,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -476,6 +580,8 @@ private fun PushToTalkCoachTab(vm: FluencyViewModel) {
                 } else {
                     UserMessageWithAnalysisCard(
                         message = msg,
+                        playingAudioPath = playingAudioPath,
+                        onPlayRecordedFile = { path -> vm.voiceController.playRecordedFile(path) },
                         onSpeakText = { vm.speakText(it) },
                         onPracticeRepeatPrompt = { repeatPhrase ->
                             draftInput = repeatPhrase
@@ -676,12 +782,19 @@ private fun TutorMessageBubble(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun UserMessageWithAnalysisCard(
     message: ChatMessage,
+    playingAudioPath: String?,
+    onPlayRecordedFile: (String) -> Unit,
     onSpeakText: (String) -> Unit,
     onPracticeRepeatPrompt: (String) -> Unit
 ) {
+    var selectedWordItem by remember { mutableStateOf<WordPronunciationItem?>(null) }
+    val hasRecordedAudio = !message.audioFilePath.isNullOrBlank() && File(message.audioFilePath).exists()
+    val isPlayingThisAudio = hasRecordedAudio && playingAudioPath == message.audioFilePath
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.End
@@ -704,6 +817,47 @@ private fun UserMessageWithAnalysisCard(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
+                Spacer(Modifier.height(8.dp))
+                // "Listen to yourself vs Reference" comparison bar (Stage 1 v1.1)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (hasRecordedAudio) {
+                        OutlinedButton(
+                            onClick = { onPlayRecordedFile(message.audioFilePath!!) },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                if (isPlayingThisAudio) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                if (isPlayingThisAudio) "Стоп запись" else "🎙 Мой голос",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val refText = message.analysis?.correctedSentence?.ifBlank { message.text } ?: message.text
+                            onSpeakText(refText)
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.VolumeUp,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("🇬🇧 Эталон", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
 
@@ -744,6 +898,83 @@ private fun UserMessageWithAnalysisCard(
                     }
 
                     HorizontalDivider()
+
+                    // Word-by-word pronunciation color chips (Stage 1 v1.1)
+                    if (analysis.wordBreakdown.isNotEmpty()) {
+                        Text(
+                            text = "🔍 Пословный разбор произношения (нажмите на слово для IPA и совета):",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            analysis.wordBreakdown.forEach { wb ->
+                                val bgColor = when (wb.status.uppercase()) {
+                                    "GOOD" -> Color(0xFF2E7D32).copy(alpha = 0.16f)
+                                    "WARN" -> Color(0xFFF57C00).copy(alpha = 0.20f)
+                                    else -> Color(0xFFC62828).copy(alpha = 0.20f)
+                                }
+                                val textColor = when (wb.status.uppercase()) {
+                                    "GOOD" -> Color(0xFF1B5E20)
+                                    "WARN" -> Color(0xFFE65100)
+                                    else -> Color(0xFFB71C1C)
+                                }
+                                Surface(
+                                    color = bgColor,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.clickable {
+                                        selectedWordItem = wb
+                                        onSpeakText(wb.word)
+                                    }
+                                ) {
+                                    Text(
+                                        text = wb.word,
+                                        color = textColor,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (selectedWordItem != null) {
+                            val w = selectedWordItem!!
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSpeakText(w.word) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${w.word}  ${w.ipa}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        if (w.tipRu.isNotBlank()) {
+                                            Text(
+                                                text = w.tipRu,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.VolumeUp,
+                                        contentDescription = "Прослушать слово",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // 1. Target Vocab Usage
                     if (analysis.targetVocabUsed.isNotEmpty()) {
@@ -1251,7 +1482,7 @@ private fun SettingsAndStatsTab(vm: FluencyViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        com.englishfluency.ai.data.FluencyRepository.AVAILABLE_MODELS.forEach { (id, label) ->
+                        FluencyRepository.AVAILABLE_MODELS.forEach { (id, label) ->
                             FilterChip(
                                 selected = modelInput == id,
                                 onClick = {

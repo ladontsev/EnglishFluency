@@ -18,7 +18,10 @@ object SampleBbcLessons {
             transcriptExcerpt = """
                 Neil: Hello and welcome to 6 Minute English, the programme where we discuss an interesting topic and teach some related English vocabulary.
                 Beth: Today we're talking about how modern technology and AI assistants are changing the way we think and remember things. Does it free up our minds, or does it make us mentally lazy?
-                Neil: When we don't have to remember phone numbers or directions, we might lose the habit of racking our brains. On the other hand, technology can be a blessing in disguise when we're overwhelmed with information...
+                Neil: When we don't have to remember phone numbers or directions, we might lose the habit of racking our brains.
+                Beth: On the other hand, forgetting your phone at home can turn out to be a blessing in disguise because it gives your brain a proper rest.
+                Neil: Exactly! Nowadays we have the whole world's knowledge right at our fingertips, which certainly gives us plenty of food for thought.
+                Beth: And with enough daily practice, using these English expressions in conversation will soon become second nature!
             """.trimIndent(),
             vocabulary = listOf(
                 VocabularyItem(
@@ -82,7 +85,10 @@ object SampleBbcLessons {
             ),
             transcriptExcerpt = """
                 Pippa: Starting a conversation before a meeting starts can feel awkward in a second language.
-                Georgie: Exactly! Instead of formal textbook sentences, native speakers rely on short idiomatic chunks like 'let's touch base tomorrow' or 'let's play it by ear'.
+                Georgie: Exactly! Instead of formal textbook sentences, native speakers rely on short idiomatic chunks like 'let's touch base tomorrow'.
+                Pippa: And if the schedule changes unexpectedly, you can always say 'let's play it by ear' and see how things go.
+                Georgie: Before starting a big task, make sure everyone is on the same page so there are no surprises later.
+                Pippa: And when you've been working hard since morning, don't be afraid to wrap things up and call it a day!
             """.trimIndent(),
             vocabulary = listOf(
                 VocabularyItem(

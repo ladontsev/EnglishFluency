@@ -2,6 +2,7 @@ package com.englishfluency.ai.audio
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +22,7 @@ class VoiceSessionController(private val context: Context) {
     private var ttsReady = false
 
     private var mediaRecorder: MediaRecorder? = null
+    private var mediaPlayer: MediaPlayer? = null
     private var currentAudioFile: File? = null
     private var speechRecognizer: SpeechRecognizer? = null
 
@@ -30,6 +32,12 @@ class VoiceSessionController(private val context: Context) {
     private val _livePartialTranscript = MutableStateFlow("")
     val livePartialTranscript: StateFlow<String> = _livePartialTranscript.asStateFlow()
 
+    private val _playingAudioPath = MutableStateFlow<String?>(null)
+    val playingAudioPath: StateFlow<String?> = _playingAudioPath.asStateFlow()
+
+    private val _speechRate = MutableStateFlow(0.96f)
+    val speechRate: StateFlow<Float> = _speechRate.asStateFlow()
+
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -37,19 +45,71 @@ class VoiceSessionController(private val context: Context) {
                 if (ukResult == TextToSpeech.LANG_MISSING_DATA || ukResult == TextToSpeech.LANG_NOT_SUPPORTED) {
                     tts?.setLanguage(Locale.US)
                 }
-                tts?.setSpeechRate(0.96f)
+                tts?.setSpeechRate(_speechRate.value)
                 ttsReady = true
             }
         }
     }
 
-    fun speakTutorText(text: String) {
+    fun setTtsSpeechRate(rate: Float) {
+        val clamped = rate.coerceIn(0.65f, 1.25f)
+        _speechRate.value = clamped
+        if (ttsReady) {
+            tts?.setSpeechRate(clamped)
+        }
+    }
+
+    fun speakTutorText(text: String, customRate: Float? = null) {
         if (!ttsReady) return
+        stopAudioPlayback()
+        tts?.setSpeechRate(customRate ?: _speechRate.value)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tutor_utt_${System.currentTimeMillis()}")
     }
 
     fun stopSpeaking() {
         tts?.stop()
+        stopAudioPlayback()
+    }
+
+    fun playRecordedFile(path: String) {
+        val file = File(path)
+        if (!file.exists()) return
+        if (_playingAudioPath.value == path) {
+            stopAudioPlayback()
+            return
+        }
+        stopSpeaking()
+        runCatching {
+            val player = MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                setOnCompletionListener {
+                    _playingAudioPath.value = null
+                    it.release()
+                }
+                setOnErrorListener { mp, _, _ ->
+                    _playingAudioPath.value = null
+                    mp.release()
+                    true
+                }
+                prepare()
+                start()
+            }
+            mediaPlayer = player
+            _playingAudioPath.value = path
+        }.onFailure {
+            _playingAudioPath.value = null
+        }
+    }
+
+    fun stopAudioPlayback() {
+        runCatching {
+            mediaPlayer?.stop()
+        }
+        runCatching {
+            mediaPlayer?.release()
+        }
+        mediaPlayer = null
+        _playingAudioPath.value = null
     }
 
     fun startPushToTalkRecording(onTranscriptResult: (String) -> Unit) {
@@ -57,8 +117,9 @@ class VoiceSessionController(private val context: Context) {
         _livePartialTranscript.value = ""
         _isRecording.value = true
 
-        // 1. Start M4A audio file recording for Gemini multimodal pronunciation/intonation analysis
-        val outFile = File(context.cacheDir, "ptt_${System.currentTimeMillis()}.m4a")
+        // 1. Save recorded voice in persistent recordings folder so user can replay their own voice anytime
+        val recDir = File(context.filesDir, "recordings").apply { mkdirs() }
+        val outFile = File(recDir, "ptt_${System.currentTimeMillis()}.m4a")
         currentAudioFile = outFile
         runCatching {
             val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -140,6 +201,7 @@ class VoiceSessionController(private val context: Context) {
     }
 
     fun release() {
+        stopAudioPlayback()
         runCatching { speechRecognizer?.destroy() }
         runCatching { mediaRecorder?.release() }
         runCatching { tts?.shutdown() }

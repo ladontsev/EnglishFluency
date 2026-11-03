@@ -33,6 +33,14 @@ data class Lesson(
 )
 
 @Serializable
+data class WordPronunciationItem(
+    val word: String,
+    val status: String = "GOOD", // "GOOD", "WARN", "NEEDS_WORK"
+    val ipa: String = "",
+    val tipRu: String = ""
+)
+
+@Serializable
 data class SpeechAnalysis(
     val userTranscript: String,
     val overallScore: Int, // 0..100
@@ -44,6 +52,7 @@ data class SpeechAnalysis(
     val pronunciationScore: Int = 85, // 0..100
     val pronunciationNotes: String = "",
     val intonationNotes: String = "",
+    val wordBreakdown: List<WordPronunciationItem> = emptyList(),
     val repeatPrompt: String? = null // If tutor asks user to repeat a specific phrase
 )
 
