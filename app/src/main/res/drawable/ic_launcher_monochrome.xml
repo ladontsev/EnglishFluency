@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Microphone capsule -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28c-6.6,0 -12,5.4 -12,12v14c0,6.6 5.4,12 12,12s12,-5.4 12,-12V40C66,33.4 60.6,28 54,28z" />
+    <!-- Microphone U-stand and base -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70,52h-4c0,8.8 -7.2,16 -16,16s-16,-7.2 -16,-16h-4c0,10.4 7.9,18.9 18,19.9V78h-8v4h20v-4h-8v-6.1C62.1,70.9 70,62.4 70,52z" />
+    <!-- Soundwave bars left & right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,44h3v16h-3zM22,48h3v8h-3zM77,44h3v16h-3zM83,48h3v8h-3z" />
+    <!-- AI Sparkle star top right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72,24l2,5l5,2l-5,2l-2,5l-2,-5l-5,-2l5,-2z" />
+</vector>
